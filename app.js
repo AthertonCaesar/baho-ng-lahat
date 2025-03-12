@@ -1,13 +1,16 @@
-// app.js
-
 // ================== DEPENDENCIES ==================
-const express      = require('express');
-const mongoose     = require('mongoose');
-const bcrypt       = require('bcryptjs');
-const session      = require('express-session');
-const fileUpload   = require('express-fileupload');
-const path         = require('path');
-const fs           = require('fs');
+const express       = require('express');
+const mongoose      = require('mongoose');
+const bcrypt        = require('bcryptjs');
+const session       = require('express-session');
+const fileUpload    = require('express-fileupload');
+const path          = require('path');
+const fs            = require('fs');
+
+// For auto-generating thumbnails (requires FFmpeg):
+const ffmpeg        = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // ================== INITIALIZE APP ==================
 const app = express();
@@ -46,19 +49,18 @@ dirs.forEach(dir => {
 
 // ================== MONGOOSE SCHEMAS ==================
 const userSchema = new mongoose.Schema({
-  username:    { type: String, unique: true },
-  password:    String,
-  isAdmin:     { type: Boolean, default: false },
-  banned:      { type: Boolean, default: false },
-  verified:    { type: Boolean, default: false },
-  subscribers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic:  { type: String, default: '/uploads/profiles/default.png' },
-  backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
-  about:       { type: String, default: '' },
-
+  username:     { type: String, unique: true },
+  password:     String,
+  isAdmin:      { type: Boolean, default: false },
+  banned:       { type: Boolean, default: false },
+  verified:     { type: Boolean, default: false },
+  subscribers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  profilePic:   { type: String, default: '/uploads/profiles/default.png' },
+  backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
+  about:        { type: String, default: '' },
   // Live streaming placeholders:
-  isLive:   { type: Boolean, default: false },
-  liveLink: { type: String, default: '' }
+  isLive:       { type: Boolean, default: false },
+  liveLink:     { type: String, default: '' }
 });
 
 const videoSchema = new mongoose.Schema({
@@ -86,7 +88,7 @@ async function createDefaultAdmin() {
   try {
     let admin = await User.findOne({ username: 'Villamor Gelera' });
     if (!admin) {
-      const hashedPassword = await bcrypt.hash('admin123', 10); // default password
+      const hashedPassword = await bcrypt.hash('admin123', 10);
       admin = new User({
         username: 'Villamor Gelera',
         password: hashedPassword,
@@ -124,7 +126,7 @@ async function isAdmin(req, res, next) {
   }
 }
 
-// ================== HTML RENDERER (WITH SCRIPTS FOR PREVIEWS) ==================
+// ================== HTML RENDERER (WITH SCRIPTS) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -179,6 +181,7 @@ function renderPage(content, req) {
           <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
           <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
           <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
+          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
           <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
           ${
             req.session.userId
@@ -210,10 +213,11 @@ function renderPage(content, req) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-      // 1) Hovering on a thumbnail: attempt to replace it with a muted autoplay video preview
+      // 1) Thumbnail preview with a mini autoplay on hover:
       document.querySelectorAll('.video-thumbnail').forEach(img => {
         img.addEventListener('mouseenter', function() {
           const videoUrl = this.getAttribute('data-video');
+          // If there's no valid video file or it doesn't look like a video, do nothing
           if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
           const preview = document.createElement('video');
           preview.src = videoUrl;
@@ -245,25 +249,42 @@ function renderPage(content, req) {
           }
         });
       }
-      // We call setupPreview for all relevant fields in the forms
+      // We call setupPreview for relevant fields in forms
       setupPreview('profilePicInput', 'profilePicPreview');
       setupPreview('backgroundPicInput', 'backgroundPicPreview');
       setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
+
+      // 3) "Share" button using the Web Share API if available
+      function shareVideo(title) {
+        if (navigator.share) {
+          navigator.share({
+            title: title,
+            text: 'Check out this video on Baho ng Lahat!',
+            url: window.location.href
+          })
+          .catch(err => console.log('Share canceled or failed: ', err));
+        } else {
+          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+        }
+      }
     </script>
   </body>
   </html>
   `;
 }
 
-// ================== ROUTES ==================
-
-// ========== HOME: LIST ALL VIDEOS ==========
+// ========== HOME PAGE: LATEST & POPULAR ==========
 app.get('/', async (req, res) => {
   try {
-    let videos = await Video.find({}).populate('owner');
-    let videoHtml = '<div class="row">';
-    videos.forEach(video => {
-      videoHtml += `
+    let allVideos = await Video.find({}).populate('owner');
+    // Sort for latest videos (by date descending)
+    let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
+    // Sort for popular videos (by likes descending)
+    let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
+
+    let latestHtml = '<h3>Latest Videos</h3><div class="row">';
+    latestVideos.forEach(video => {
+      latestHtml += `
       <div class="col-md-4">
         <div class="card video-card">
           <img src="${video.thumbnail}" alt="Thumbnail"
@@ -272,23 +293,46 @@ app.get('/', async (req, res) => {
                style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
-            <p class="card-text">${video.description.substring(0, 100)}...</p>
+            <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Category: ${video.category}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch Video</a>
+            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
           </div>
         </div>
       </div>
       `;
     });
-    videoHtml += '</div>';
-    res.send(renderPage(videoHtml, req));
+    latestHtml += '</div>';
+
+    let popularHtml = '<h3 class="mt-4">Popular Videos</h3><div class="row">';
+    popularVideos.forEach(video => {
+      popularHtml += `
+      <div class="col-md-4">
+        <div class="card video-card">
+          <img src="${video.thumbnail}" alt="Thumbnail"
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
+          <div class="card-body">
+            <h5 class="card-title">${video.title}</h5>
+            <p class="card-text">${video.description.substring(0, 60)}...</p>
+            <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+          </div>
+        </div>
+      </div>
+      `;
+    });
+    popularHtml += '</div>';
+
+    let combinedHtml = `${latestHtml} ${popularHtml}`;
+    res.send(renderPage(combinedHtml, req));
   } catch (err) {
     console.error('Error loading home videos:', err);
     res.send('Error loading videos.');
   }
 });
 
-// ========== CATEGORY ROUTES (Music, Gaming, News) ==========
+// ========== CATEGORY ROUTES (Music, Gaming, News, General) ==========
 app.get('/music', async (req, res) => {
   try {
     let videos = await Video.find({ category: 'Music' });
@@ -303,7 +347,7 @@ app.get('/music', async (req, res) => {
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 100)}...</p>
+              <p class="card-text">${video.description.substring(0, 60)}...</p>
               <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
             </div>
           </div>
@@ -331,7 +375,7 @@ app.get('/gaming', async (req, res) => {
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 100)}...</p>
+              <p class="card-text">${video.description.substring(0, 60)}...</p>
               <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
             </div>
           </div>
@@ -359,7 +403,7 @@ app.get('/news', async (req, res) => {
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 100)}...</p>
+              <p class="card-text">${video.description.substring(0, 60)}...</p>
               <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
             </div>
           </div>
@@ -373,9 +417,36 @@ app.get('/news', async (req, res) => {
   }
 });
 
+app.get('/general', async (req, res) => {
+  try {
+    let videos = await Video.find({ category: 'General' });
+    let videoHtml = '<h2>General Videos</h2><div class="row">';
+    videos.forEach(video => {
+      videoHtml += `
+        <div class="col-md-4">
+          <div class="card video-card">
+            <img src="${video.thumbnail}" alt="Thumbnail"
+                 class="card-img-top video-thumbnail"
+                 data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
+            <div class="card-body">
+              <h5 class="card-title">${video.title}</h5>
+              <p class="card-text">${video.description.substring(0, 60)}...</p>
+              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    videoHtml += '</div>';
+    res.send(renderPage(videoHtml, req));
+  } catch (err) {
+    res.send('Error loading general videos.');
+  }
+});
+
 // ========== LIVE PAGE ==========
 app.get('/live', async (req, res) => {
-  // Show all users who are live, and embed their liveLink if available
   try {
     let liveUsers = await User.find({ isLive: true });
     let liveHtml = '<h2>Live Streams</h2>';
@@ -527,19 +598,46 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     if (!req.files || !req.files.videoFile) {
       return res.send('No video file uploaded.');
     }
+    // 1) Move the video file to disk
     let videoFile = req.files.videoFile;
     let videoUploadPath = path.join(__dirname, 'uploads', 'videos', Date.now() + '-' + videoFile.name);
+    await videoFile.mv(videoUploadPath);
 
-    // Handle optional thumbnail upload
+    // 2) If user didn't provide a thumbnail, auto-generate one from the video
     let thumbnailPath = '/uploads/thumbnails/default.png';
     if (req.files.thumbnailFile) {
+      // They uploaded a custom thumbnail
       let thumbFile = req.files.thumbnailFile;
       let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', Date.now() + '-' + thumbFile.name);
       await thumbFile.mv(thumbUploadPath);
       thumbnailPath = '/uploads/thumbnails/' + path.basename(thumbUploadPath);
+    } else {
+      // Auto-generate using FFmpeg
+      let thumbFileName = Date.now() + '-auto.png';
+      let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', thumbFileName);
+      // We'll pick a frame at 1 second
+      await new Promise((resolve, reject) => {
+        ffmpeg(videoUploadPath)
+          .on('end', () => {
+            console.log('Thumbnail generated');
+            thumbnailPath = '/uploads/thumbnails/' + thumbFileName;
+            resolve();
+          })
+          .on('error', err => {
+            console.error('Thumbnail generation error:', err);
+            // fallback to default
+            resolve();
+          })
+          .screenshots({
+            timestamps: [1],
+            filename: thumbFileName,
+            folder: path.join(__dirname, 'uploads', 'thumbnails'),
+            size: '320x240'
+          });
+      });
     }
 
-    await videoFile.mv(videoUploadPath);
+    // 3) Create and save the new video document
     let newVideo = new Video({
       title:       req.body.title,
       description: req.body.description,
@@ -562,11 +660,50 @@ app.get('/video/:id', async (req, res) => {
     let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
     if (!video) return res.send('Video not found.');
 
+    // SUGGESTED videos: same category, exclude current
+    let suggested = await Video.find({
+      category: video.category,
+      _id: { $ne: video._id }
+    }).limit(5);
+
+    let suggestedHtml = '';
+    suggested.forEach(sv => {
+      suggestedHtml += `
+      <div class="card mb-2">
+        <div class="card-body p-2">
+          <img src="${sv.thumbnail}" alt="Thumbnail"
+               class="video-thumbnail"
+               data-video="${sv.filePath}"
+               style="width:100%; max-height:100px; object-fit:cover;">
+          <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
+          <a href="/video/${sv._id}" class="btn btn-sm btn-primary">Watch</a>
+        </div>
+      </div>
+      `;
+    });
+
+    // Check if the viewer is subscribed to the owner
+    let subscribeButton = '';
+    if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
+      // The user is not the owner, so maybe subscribe/unsubscribe
+      let isSubscribed = video.owner.subscribers.includes(req.session.userId);
+      subscribeButton = `
+      <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
+        <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+      </form>
+      `;
+    }
+
+    // Download button
+    let downloadButton = `
+      <a href="/download/${video._id}" class="btn btn-secondary">Download</a>
+    `;
+
+    // Like/Dislike, Edit/Delete, Comment
     let likeBtn = '';
     let dislikeBtn = '';
     let editDelete = '';
     let commentForm = '';
-
     if (req.session.userId) {
       likeBtn = `
         <form method="POST" action="/like/${video._id}" style="display:inline;">
@@ -594,25 +731,41 @@ app.get('/video/:id', async (req, res) => {
       }
     }
 
+    // Comments
     let commentsHtml = '';
     video.comments.forEach(c => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
 
+    // "Share" button (calls shareVideo(...) in the script)
+    let shareButton = `
+      <button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>
+    `;
+
+    // Layout: main video left (col-8), suggestions right (col-4)
     let videoPage = `
-      <h2>${video.title}</h2>
-      <video width="640" height="360" controls>
-        <source src="${video.filePath}" type="video/mp4">
-        Your browser does not support the video tag.
-      </video>
-      <p>Category: ${video.category}</p>
-      <p>${video.description}</p>
-      <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
-      ${likeBtn} ${dislikeBtn} ${editDelete}
-      <hr>
-      <h4>Comments</h4>
-      ${commentsHtml}
-      ${req.session.userId ? commentForm : '<p>Please log in to comment.</p>'}
+      <div class="row">
+        <div class="col-md-8">
+          <h2>${video.title}</h2>
+          <video width="100%" height="auto" controls>
+            <source src="${video.filePath}" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+          <p>Category: ${video.category}</p>
+          <p>${video.description}</p>
+          <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
+          ${subscribeButton}
+          ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
+          <hr>
+          <h4>Comments</h4>
+          ${commentsHtml}
+          ${req.session.userId ? commentForm : '<p>Please log in to comment.</p>'}
+        </div>
+        <div class="col-md-4">
+          <h4>Suggested Videos</h4>
+          ${suggestedHtml}
+        </div>
+      </div>
     `;
     res.send(renderPage(videoPage, req));
   } catch (err) {
@@ -626,12 +779,14 @@ app.post('/like/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    // Remove dislike if present
+    // Remove from dislikes if present
     video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     // Toggle like
-    if(video.likes.includes(req.session.userId)) {
+    if (video.likes.includes(req.session.userId)) {
+      // Already liked -> remove like
       video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     } else {
+      // Not liked -> add
       video.likes.push(req.session.userId);
     }
     await video.save();
@@ -646,12 +801,14 @@ app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    // Remove like if present
+    // Remove from likes if present
     video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     // Toggle dislike
-    if(video.dislikes.includes(req.session.userId)) {
+    if (video.dislikes.includes(req.session.userId)) {
+      // Already disliked -> remove dislike
       video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     } else {
+      // Not disliked -> add
       video.dislikes.push(req.session.userId);
     }
     await video.save();
@@ -679,7 +836,7 @@ app.get('/edit/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    if(video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
+    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
     const form = `
     <h2>Edit Video</h2>
     <form method="POST" action="/edit/${video._id}" enctype="multipart/form-data">
@@ -718,7 +875,7 @@ app.post('/edit/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    if(video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
+    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
     video.title       = req.body.title;
     video.description = req.body.description;
     video.category    = req.body.category || 'General';
@@ -741,7 +898,7 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    if(video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
+    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
     // Delete the actual video file from disk
     fs.unlink(path.join(__dirname, video.filePath), err => {
       if(err) console.log('Error deleting video file:', err);
@@ -750,6 +907,43 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
     res.redirect('/');
   } catch (err) {
     res.send('Error deleting video.');
+  }
+});
+
+// ========== DOWNLOAD FEATURE ==========
+app.get('/download/:id', async (req, res) => {
+  try {
+    let video = await Video.findById(req.params.id);
+    if (!video) return res.send('Video not found.');
+    const filePath = path.join(__dirname, video.filePath);
+    res.download(filePath, path.basename(filePath));
+  } catch (err) {
+    console.error('Download error:', err);
+    res.send('Error downloading file.');
+  }
+});
+
+// ========== SUBSCRIBE / UNSUBSCRIBE ==========
+app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
+  try {
+    let owner = await User.findById(req.params.ownerId);
+    let user  = await User.findById(req.session.userId);
+    if (!owner || !user) return res.send('User not found.');
+    if (owner._id.toString() === user._id.toString()) {
+      return res.send('You cannot subscribe to yourself.');
+    }
+    // Toggle subscription
+    if (owner.subscribers.includes(user._id)) {
+      // Already subscribed -> unsubscribe
+      owner.subscribers = owner.subscribers.filter(sid => sid.toString() !== user._id.toString());
+    } else {
+      // Not subscribed -> subscribe
+      owner.subscribers.push(user._id);
+    }
+    await owner.save();
+    res.redirect('back');
+  } catch (err) {
+    res.send('Error subscribing/unsubscribing.');
   }
 });
 
@@ -773,7 +967,7 @@ app.get('/profile/:id', async (req, res) => {
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 100)}...</p>
+              <p class="card-text">${video.description.substring(0, 60)}...</p>
               <a href="/video/${video._id}" class="btn btn-primary">Watch Video</a>
             </div>
           </div>
@@ -781,6 +975,7 @@ app.get('/profile/:id', async (req, res) => {
       `;
     });
     videosHtml += '</div>';
+
     let liveSection = '';
     if (userProfile.isLive) {
       liveSection = `
@@ -791,12 +986,14 @@ app.get('/profile/:id', async (req, res) => {
           : '(No live link provided)'}
       </div>`;
     }
+
     let profileHtml = `
     <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge badge-info">Verified</span>' : ''}</h2>
     <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">
     <p>${userProfile.about}</p>
+    <p>Subscribers: ${userProfile.subscribers.length}</p>
     ${liveSection}
-    <h4>Videos:</h4>
+    <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
     ${videosHtml}
     `;
 
@@ -827,7 +1024,7 @@ app.get('/profile/:id', async (req, res) => {
       <p>Current status: ${userProfile.isLive ? 'LIVE' : 'Offline'}</p>
       <form method="POST" action="/setLiveLink">
         <div class="form-group">
-          <label>Live Embed Link (e.g., an embeddable video URL):</label>
+          <label>Live Embed Link (e.g., YouTube embed URL):</label>
           <input type="text" name="liveLink" class="form-control" value="${userProfile.liveLink}" />
         </div>
         <button type="submit" class="btn btn-info">Save Live Link</button>
@@ -923,12 +1120,13 @@ app.get('/admin', isAdmin, async (req, res) => {
       userHtml += `
       <div class="card mb-2">
         <div class="card-body">
-          <p>${user.username} - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'} 
-             ${user._id.toString() !== req.session.userId
-               ? `<form style="display:inline;" method="POST" action="/ban/${user._id}">
-                    <button class="btn btn-danger btn-sm ml-2">Ban/Unban</button>
-                  </form>`
-               : ''
+          <p>${user.username} - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
+             ${
+               user._id.toString() !== req.session.userId
+                 ? `<form style="display:inline;" method="POST" action="/ban/${user._id}">
+                      <button class="btn btn-danger btn-sm ml-2">Ban/Unban</button>
+                    </form>`
+                 : ''
              }
              ${
                !user.verified
