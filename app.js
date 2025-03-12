@@ -220,7 +220,7 @@ function renderPage(content, req) {
 }
 
         footer {
-  background: #1e293b;
+  background: #f8fafc;
   padding: 3rem 0;
   margin-top: 4rem;
 }
@@ -266,7 +266,7 @@ function renderPage(content, req) {
 }
 
         .nav-link:hover {
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.1);
   transform: translateY(-2px);
 }
     </style>
