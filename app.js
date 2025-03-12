@@ -1,23 +1,30 @@
 // ================== DEPENDENCIES ==================
-const express       = require('express');
-const mongoose      = require('mongoose');
-const bcrypt        = require('bcryptjs');
-const session       = require('express-session');
-const fileUpload    = require('express-fileupload');
-const path          = require('path');
-const fs            = require('fs');
+const express = require('express');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
+const fileUpload = require('express-fileupload');
+const path = require('path');
+const fs = require('fs');
+const http = require('http');
+const { Server } = require('socket.io');
 
-// For auto-generating thumbnails (requires FFmpeg):
-const ffmpeg        = require('fluent-ffmpeg');
+// FFmpeg setup
+const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // ================== INITIALIZE APP ==================
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
+// ================== NOTIFICATION STORAGE ==================
+const notifications = new Map();
+
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -32,56 +39,61 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Serve static files (for uploaded videos, profiles, backgrounds, thumbnails)
+// Static files and directories setup
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+['./uploads', './uploads/videos', './uploads/profiles', './uploads/backgrounds', './uploads/thumbnails']
+  .forEach(dir => !fs.existsSync(dir) && fs.mkdirSync(dir));
 
-// Create required directories if they do not exist
-const dirs = [
-  './uploads',
-  './uploads/videos',
-  './uploads/profiles',
-  './uploads/backgrounds',
-  './uploads/thumbnails'
-];
-dirs.forEach(dir => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-});
-
-// ================== MONGOOSE SCHEMAS ==================
+// ================== UPDATED SCHEMAS ==================
 const userSchema = new mongoose.Schema({
-  username:     { type: String, unique: true },
-  password:     String,
-  isAdmin:      { type: Boolean, default: false },
-  banned:       { type: Boolean, default: false },
-  verified:     { type: Boolean, default: false },
-  subscribers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic:   { type: String, default: '/uploads/profiles/default.png' },
-  backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
-  about:        { type: String, default: '' },
-  // Live streaming placeholders:
-  isLive:       { type: Boolean, default: false },
-  liveLink:     { type: String, default: '' }
+  username: { type: String, unique: true },
+  password: String,
+  isAdmin: { type: Boolean, default: false },
+  banned: { type: Boolean, default: false },
+  verified: { type: Boolean, default: false },
+  subscribers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  profilePic: { type: String, default: '/uploads/profiles/default.png' },
+  backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
+  about: { type: String, default: '' },
+  isLive: { type: Boolean, default: false },
+  liveLink: { type: String, default: '' }
 });
 
 const videoSchema = new mongoose.Schema({
-  title:       String,
+  title: String,
   description: String,
-  filePath:    String,
-  thumbnail:   { type: String, default: '/uploads/thumbnails/default.png' },
-  category:    { type: String, default: 'General' },
-  owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  likes:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  dislikes:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  comments:    [{
-    user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  filePath: String,
+  thumbnail: { type: String, default: '/uploads/thumbnails/default.png' },
+  category: { type: String, default: 'General' },
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  comments: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     comment: String,
-    date:    { type: Date, default: Date.now }
+    date: { type: Date, default: Date.now },
+    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    hearts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    pinned: { type: Boolean, default: false }
   }],
-  uploadDate:  { type: Date, default: Date.now }
+  uploadDate: { type: Date, default: Date.now }
 });
 
-const User  = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
 const Video = mongoose.model('Video', videoSchema);
+
+// ================== SOCKET.IO HANDLING ==================
+io.on('connection', (socket) => {
+  socket.on('join', (userId) => {
+    socket.join(userId);
+  });
+});
+
+function sendNotification(userId, message) {
+  if (!notifications.has(userId)) notifications.set(userId, []);
+  notifications.get(userId).push({ message, date: new Date() });
+  io.to(userId).emit('notification', { count: notifications.get(userId).length });
+}
 
 // ================== CREATE DEFAULT ADMIN ==================
 async function createDefaultAdmin() {
@@ -129,143 +141,147 @@ async function isAdmin(req, res, next) {
 // ================== HTML RENDERER (WITH SCRIPTS) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
-  const username    = req.session.username || '';
+  const username = req.session.username || '';
+
   return `
   <!DOCTYPE html>
   <html>
   <head>
     <title>Baho ng Lahat</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-      body {
-        background-color: #f8f9fa;
-        font-family: Arial, sans-serif;
+      :root {
+        --primary: #dc3545;
+        --dark: #0f0f0f;
+        --light: #f8f9fa;
       }
-      .navbar { margin-bottom: 20px; }
-      .video-card { margin-bottom: 20px; }
+      body {
+        background: var(--dark);
+        color: var(--light);
+        font-family: 'Segoe UI', sans-serif;
+      }
+      .navbar {
+        background: var(--dark) !important;
+        border-bottom: 1px solid #333;
+      }
+      .card {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        transition: transform 0.3s ease;
+      }
+      .card:hover {
+        transform: translateY(-5px);
+      }
+      .btn-primary {
+        background: var(--primary);
+        border: none;
+      }
+      .search-bar {
+        width: 400px;
+        margin-right: 20px;
+      }
+      .notification-bell {
+        position: relative;
+        margin-right: 15px;
+      }
+      .badge-notification {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+      }
+      .comment-card {
+        background: #2d2d2d;
+        border-radius: 8px;
+        position: relative;
+      }
+      .pinned-comment {
+        border-left: 3px solid var(--primary);
+      }
       .video-thumbnail {
         width: 100%;
         max-width: 300px;
         cursor: pointer;
         transition: transform 0.3s;
       }
-      .video-thumbnail:hover {
-        transform: scale(1.05);
-      }
-      footer {
-        margin-top: 50px;
-        padding: 20px;
-        background-color: #e9ecef;
-      }
-      /* Preview images in forms */
-      .preview-img {
-        display: block;
-        margin-top: 10px;
-        max-width: 200px;
-        height: auto;
-      }
     </style>
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-      <a class="navbar-brand" href="/">Baho ng Lahat</a>
-      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
-        aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon">☰</span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
+    <nav class="navbar navbar-expand-lg navbar-light">
+      <a class="navbar-brand text-light" href="/">Baho ng Lahat</a>
+      <div class="collapse navbar-collapse">
         <ul class="navbar-nav mr-auto">
-          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
-          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
-          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
-          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
-          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
-          <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
-          ${
-            req.session.userId
-              ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
-              : ''
-          }
-          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
+          <li class="nav-item">
+            <form action="/search" method="GET" class="form-inline">
+              <input class="form-control search-bar bg-dark text-light" 
+                     type="search" name="q" 
+                     placeholder="Search videos..." 
+                     aria-label="Search">
+            </form>
+          </li>
+          <li class="nav-item"><a class="nav-link text-light" href="/">Home</a></li>
+          <li class="nav-item"><a class="nav-link text-light" href="/music">Music</a></li>
+          <li class="nav-item"><a class="nav-link text-light" href="/gaming">Gaming</a></li>
+          <li class="nav-item"><a class="nav-link text-light" href="/news">News</a></li>
+          <li class="nav-item"><a class="nav-link text-light" href="/live">Live</a></li>
+          ${req.session.userId ? `
+            <li class="nav-item"><a class="nav-link text-light" href="/upload">Upload</a></li>
+            <li class="nav-item"><a class="nav-link text-light" href="/profile/${req.session.userId}">Profile</a></li>` : ''}
+          ${isAdminUser ? `<li class="nav-item"><a class="nav-link text-light" href="/admin">Admin</a></li>` : ''}
         </ul>
         <ul class="navbar-nav">
-          ${
-            req.session.userId
-              ? `<li class="nav-item"><a class="nav-link" href="/logout">Logout (${username})</a></li>`
-              : `<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
-                 <li class="nav-item"><a class="nav-link" href="/signup">Sign Up</a></li>`
-          }
+          ${req.session.userId ? `
+            <li class="nav-item notification-bell">
+              <a class="nav-link" href="#" onclick="showNotifications()">
+                🔔 <span class="badge badge-danger badge-notification" id="notificationCount">0</span>
+              </a>
+            </li>
+            <li class="nav-item"><a class="nav-link text-light" href="/logout">Logout (${username})</a></li>` : `
+            <li class="nav-item"><a class="nav-link text-light" href="/login">Login</a></li>
+            <li class="nav-item"><a class="nav-link text-light" href="/signup">Sign Up</a></li>`}
         </ul>
       </div>
     </nav>
+
     <div class="container">
       ${content}
     </div>
-    <footer class="text-center">
-      <p>By Villamor Gelera</p>
-    </footer>
 
-    <!-- Bootstrap JS (for navbar toggling) -->
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
-
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-      // 1) Thumbnail preview with a mini autoplay on hover:
-      document.querySelectorAll('.video-thumbnail').forEach(img => {
-        img.addEventListener('mouseenter', function() {
-          const videoUrl = this.getAttribute('data-video');
-          // If there's no valid video file or it doesn't look like a video, do nothing
-          if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
-          const preview = document.createElement('video');
-          preview.src = videoUrl;
-          preview.autoplay = true;
-          preview.muted = true;
-          preview.loop = true;
-          preview.width = this.clientWidth;
-          preview.height = this.clientHeight;
-          preview.style.objectFit = 'cover';
-          this.parentNode.replaceChild(preview, this);
-        });
+      const socket = io();
+      ${req.session.userId ? `socket.emit('join', '${req.session.userId}');` : ''}
+
+      socket.on('notification', (data) => {
+        document.getElementById('notificationCount').textContent = data.count;
       });
 
-      // 2) Preview images (profile pic, background pic, thumbnail) before uploading
-      function setupPreview(inputId, previewId) {
-        const inputEl = document.getElementById(inputId);
-        const previewEl = document.getElementById(previewId);
-        if (!inputEl || !previewEl) return;
-        inputEl.addEventListener('change', function() {
-          const file = this.files[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-              previewEl.src = e.target.result;
-            }
-            reader.readAsDataURL(file);
-          } else {
-            previewEl.src = '';
-          }
-        });
+      async function showNotifications() {
+        const res = await fetch('/notifications');
+        const notifs = await res.json();
+        alert('Notifications:\\n' + notifs.map(n => n.message).join('\\n'));
       }
-      // We call setupPreview for relevant fields in forms
-      setupPreview('profilePicInput', 'profilePicPreview');
-      setupPreview('backgroundPicInput', 'backgroundPicPreview');
-      setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
 
-      // 3) "Share" button using the Web Share API if available
-      function shareVideo(title) {
-        if (navigator.share) {
-          navigator.share({
-            title: title,
-            text: 'Check out this video on Baho ng Lahat!',
-            url: window.location.href
-          })
-          .catch(err => console.log('Share canceled or failed: ', err));
-        } else {
-          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
-        }
+      async function likeComment(videoId, commentId) {
+        await fetch(\`/likeComment/\${videoId}/\${commentId}\`, { method: 'POST' });
+        location.reload();
+      }
+
+      async function heartComment(videoId, commentId) {
+        await fetch(\`/heartComment/\${videoId}/\${commentId}\`, { method: 'POST' });
+        location.reload();
+      }
+
+      async function pinComment(videoId, commentId) {
+        await fetch(\`/pinComment/\${videoId}/\${commentId}\`, { method: 'POST' });
+        location.reload();
+      }
+
+      async function subscribeHandler(ownerId) {
+        await fetch(\`/subscribe/\${ownerId}\`, { method: 'POST' });
+        location.reload();
       }
     </script>
   </body>
@@ -330,6 +346,86 @@ app.get('/', async (req, res) => {
     console.error('Error loading home videos:', err);
     res.send('Error loading videos.');
   }
+});
+
+// ================== NEW ROUTES ==================
+// Search Route
+app.get('/search', async (req, res) => {
+  try {
+    const query = new RegExp(req.query.q, 'i');
+    const videos = await Video.find({ title: query }).populate('owner');
+    
+    let resultsHtml = `<h2>Search Results for "${req.query.q}"</h2><div class="row">`;
+    videos.forEach(video => {
+      resultsHtml += `
+        <div class="col-md-4 mb-4">
+          <div class="card">
+            <img src="${video.thumbnail}" class="card-img-top video-thumbnail">
+            <div class="card-body">
+              <h5>${video.title}</h5>
+              <p>${video.description.substring(0, 60)}...</p>
+              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            </div>
+          </div>
+        </div>`;
+    });
+    resultsHtml += '</div>';
+    res.send(renderPage(resultsHtml, req));
+  } catch (err) {
+    res.send('Error searching videos.');
+  }
+});
+
+// Comment Interactions
+app.post('/likeComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.videoId);
+    const comment = video.comments.id(req.params.commentId);
+    const userId = req.session.userId;
+
+    comment.likes = comment.likes.includes(userId) 
+      ? comment.likes.filter(id => id.toString() !== userId)
+      : [...comment.likes, userId];
+
+    await video.save();
+    res.redirect(`/video/${req.params.videoId}`);
+  } catch (err) {
+    res.send('Error liking comment');
+  }
+});
+
+app.post('/heartComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.videoId);
+    const comment = video.comments.id(req.params.commentId);
+    const userId = req.session.userId;
+
+    comment.hearts = comment.hearts.includes(userId)
+      ? comment.hearts.filter(id => id.toString() !== userId)
+      : [...comment.hearts, userId];
+
+    await video.save();
+    res.redirect(`/video/${req.params.videoId}`);
+  } catch (err) {
+    res.send('Error hearting comment');
+  }
+});
+
+app.post('/pinComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.videoId);
+    const comment = video.comments.id(req.params.commentId);
+    comment.pinned = !comment.pinned;
+    await video.save();
+    res.redirect(`/video/${req.params.videoId}`);
+  } catch (err) {
+    res.send('Error pinning comment');
+  }
+});
+
+// Notifications Route
+app.get('/notifications', isAuthenticated, (req, res) => {
+  res.json(notifications.get(req.session.userId) || []);
 });
 
 // ========== CATEGORY ROUTES (Music, Gaming, News, General) ==========
@@ -687,12 +783,17 @@ app.get('/video/:id', async (req, res) => {
     if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
       // The user is not the owner, so maybe subscribe/unsubscribe
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
-      subscribeButton = `
-      <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
-        <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
-      </form>
-      `;
-    }
+        subscribeButton = `
+        <button class="btn ${isSubscribed ? 'btn-secondary' : 'btn-danger'}" 
+          onclick="subscribeHandler('${video.owner._id}')>
+    ${isSubscribed ? 'Subscribed' : 'Subscribe'} (${video.owner.subscribers.length})
+  </button>
+
+        <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
+          <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+        </form>
+        `;
+      }
 
     // Download button
     let downloadButton = `
@@ -733,9 +834,28 @@ app.get('/video/:id', async (req, res) => {
 
     // Comments
     let commentsHtml = '';
-    video.comments.forEach(c => {
-      commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
-    });
+    commentsHtml += `
+<div class="card comment-card ${c.pinned ? 'pinned-comment' : ''} mb-2">
+  <div class="card-body">
+    ${c.pinned ? '<span class="badge badge-primary">Pinned</span>' : ''}
+    <p><strong>${c.user.username}:</strong> ${c.comment}</p>
+    <div class="d-flex align-items-center gap-2">
+      <button onclick="likeComment('${video._id}', '${c._id}')" 
+              class="btn btn-sm ${c.likes.includes(req.session.userId) ? 'btn-primary' : 'btn-outline-primary'}">
+        👍 ${c.likes.length}
+      </button>
+      <button onclick="heartComment('${video._id}', '${c._id}')" 
+              class="btn btn-sm ${c.hearts.includes(req.session.userId) ? 'btn-danger' : 'btn-outline-danger'}">
+        ❤️ ${c.hearts.length}
+      </button>
+      ${video.owner._id.toString() === req.session.userId ? `
+        <button onclick="pinComment('${video._id}', '${c._id}')" 
+                class="btn btn-sm btn-outline-info">
+          📌 ${c.pinned ? 'Unpin' : 'Pin'}
+        </button>` : ''}
+    </div>
+  </div>
+</div>`;
 
     // "Share" button (calls shareVideo(...) in the script)
     let shareButton = `
