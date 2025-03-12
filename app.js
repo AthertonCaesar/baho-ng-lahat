@@ -139,7 +139,29 @@ function renderPage(content, req) {
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        :root {
+        // In renderPage() function's <style> section add:
+:root {
+  --bg-color: #ffffff;
+  --text-color: #1e293b;
+  --card-bg: #ffffff;
+}
+
+[data-theme="dark"] {
+  --bg-color: #0f172a;
+  --text-color: #f8fafc;
+  --card-bg: #1e293b;
+}
+
+body {
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+.video-card {
+  background: var(--card-bg);
+}
+    
+    :root {
             --primary: #6366f1;
             --primary-hover: #4f46e5;
             --dark: #1e293b;
@@ -155,7 +177,20 @@ function renderPage(content, req) {
         }
 
         .navbar {
-            background: rgba(255, 255, 255, 0.95);
+            <li class="nav-item">
+  <button class="nav-link" onclick="toggleTheme()">🌓</button>
+</li>
+
+let currentTheme = localStorage.getItem('theme') || 'light';
+document.documentElement.setAttribute('data-theme', currentTheme);
+
+function toggleTheme() {
+  currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', currentTheme);
+  localStorage.setItem('theme', currentTheme);
+}
+        
+        background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
