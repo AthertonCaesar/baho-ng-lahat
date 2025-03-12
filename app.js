@@ -142,7 +142,7 @@ function renderPage(content, req) {
         :root {
             --primary: #f8fafc;
             --primary-hover: #4f46e5;
-            --dark: #f8fafc;
+            --dark: #1e293b;
             --light: #f8fafc;
         }
 
@@ -315,6 +315,7 @@ function renderPage(content, req) {
     <footer class="text-center">
         <div class="container">
             <p class="mb-0">By Villamor Gelera</p>
+              color: rgba(255, 255, 255, 0.6);
             <div class="mt-2">
                 <!-- Add social icons if needed -->
             </div>
