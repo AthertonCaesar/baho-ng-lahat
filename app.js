@@ -221,6 +221,7 @@ function renderPage(content, req) {
 
         footer {
   background: #1e293b;
+  color: rgba(255, 255, 255, 0.9);
   padding: 3rem 0;
   margin-top: 4rem;
 }
@@ -313,9 +314,8 @@ function renderPage(content, req) {
     </main>
 
     <footer class="text-center">
-          color: rgba(255, 255, 255, 0.6);
-    <div class="container">
-          <p class="mb-0">By Villamor Gelera</p>
+        <div class="container">
+            <p class="mb-0">By Villamor Gelera</p>
             <div class="mt-2">
                 <!-- Add social icons if needed -->
             </div>
