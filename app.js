@@ -1,30 +1,23 @@
 // ================== DEPENDENCIES ==================
-const express = require('express');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const session = require('express-session');
-const fileUpload = require('express-fileupload');
-const path = require('path');
-const fs = require('fs');
-const http = require('http');
-const { Server } = require('socket.io');
+const express       = require('express');
+const mongoose      = require('mongoose');
+const bcrypt        = require('bcryptjs');
+const session       = require('express-session');
+const fileUpload    = require('express-fileupload');
+const path          = require('path');
+const fs            = require('fs');
 
-// FFmpeg setup
-const ffmpeg = require('fluent-ffmpeg');
+// For auto-generating thumbnails (requires FFmpeg):
+const ffmpeg        = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 // ================== INITIALIZE APP ==================
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
-// ================== NOTIFICATION STORAGE ==================
-const notifications = new Map();
-
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -39,47 +32,55 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Static files and directories setup
+// Serve static files (for uploaded videos, profiles, backgrounds, thumbnails)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-['./uploads', './uploads/videos', './uploads/profiles', './uploads/backgrounds', './uploads/thumbnails']
-  .forEach(dir => !fs.existsSync(dir) && fs.mkdirSync(dir));
 
-// ================== UPDATED SCHEMAS ==================
+// Create required directories if they do not exist
+const dirs = [
+  './uploads',
+  './uploads/videos',
+  './uploads/profiles',
+  './uploads/backgrounds',
+  './uploads/thumbnails'
+];
+dirs.forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+});
+
+// ================== MONGOOSE SCHEMAS ==================
 const userSchema = new mongoose.Schema({
-  username: { type: String, unique: true },
-  password: String,
-  isAdmin: { type: Boolean, default: false },
-  banned: { type: Boolean, default: false },
-  verified: { type: Boolean, default: false },
-  subscribers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic: { type: String, default: '/uploads/profiles/default.png' },
-  backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
-  about: { type: String, default: '' },
-  isLive: { type: Boolean, default: false },
-  liveLink: { type: String, default: '' }
+  username:     { type: String, unique: true },
+  password:     String,
+  isAdmin:      { type: Boolean, default: false },
+  banned:       { type: Boolean, default: false },
+  verified:     { type: Boolean, default: false },
+  subscribers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  profilePic:   { type: String, default: '/uploads/profiles/default.png' },
+  backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
+  about:        { type: String, default: '' },
+  // Live streaming placeholders:
+  isLive:       { type: Boolean, default: false },
+  liveLink:     { type: String, default: '' }
 });
 
 const videoSchema = new mongoose.Schema({
-  title: String,
+  title:       String,
   description: String,
-  filePath: String,
-  thumbnail: { type: String, default: '/uploads/thumbnails/default.png' },
-  category: { type: String, default: 'General' },
-  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  comments: [{
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  filePath:    String,
+  thumbnail:   { type: String, default: '/uploads/thumbnails/default.png' },
+  category:    { type: String, default: 'General' },
+  owner:       { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  likes:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  dislikes:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  comments:    [{
+    user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     comment: String,
-    date: { type: Date, default: Date.now },
-    likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    hearts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    pinned: { type: Boolean, default: false }
+    date:    { type: Date, default: Date.now }
   }],
-  uploadDate: { type: Date, default: Date.now }
+  uploadDate:  { type: Date, default: Date.now }
 });
 
-const User = mongoose.model('User', userSchema);
+const User  = mongoose.model('User', userSchema);
 const Video = mongoose.model('Video', videoSchema);
 
 // ================== SOCKET.IO HANDLING ==================
@@ -289,65 +290,6 @@ function renderPage(content, req) {
   `;
 }
 
-// ========== HOME PAGE: LATEST & POPULAR ==========
-app.get('/', async (req, res) => {
-  try {
-    let allVideos = await Video.find({}).populate('owner');
-    // Sort for latest videos (by date descending)
-    let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
-    // Sort for popular videos (by likes descending)
-    let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
-
-    let latestHtml = '<h3>Latest Videos</h3><div class="row">';
-    latestVideos.forEach(video => {
-      latestHtml += `
-      <div class="col-md-4">
-        <div class="card video-card">
-          <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
-               style="max-height:200px; object-fit:cover;">
-          <div class="card-body">
-            <h5 class="card-title">${video.title}</h5>
-            <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <p class="text-muted"><small>Category: ${video.category}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
-          </div>
-        </div>
-      </div>
-      `;
-    });
-    latestHtml += '</div>';
-
-    let popularHtml = '<h3 class="mt-4">Popular Videos</h3><div class="row">';
-    popularVideos.forEach(video => {
-      popularHtml += `
-      <div class="col-md-4">
-        <div class="card video-card">
-          <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
-               style="max-height:200px; object-fit:cover;">
-          <div class="card-body">
-            <h5 class="card-title">${video.title}</h5>
-            <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
-          </div>
-        </div>
-      </div>
-      `;
-    });
-    popularHtml += '</div>';
-
-    let combinedHtml = `${latestHtml} ${popularHtml}`;
-    res.send(renderPage(combinedHtml, req));
-  } catch (err) {
-    console.error('Error loading home videos:', err);
-    res.send('Error loading videos.');
-  }
-});
-
 // ================== NEW ROUTES ==================
 // Search Route
 app.get('/search', async (req, res) => {
@@ -426,6 +368,65 @@ app.post('/pinComment/:videoId/:commentId', isAuthenticated, async (req, res) =>
 // Notifications Route
 app.get('/notifications', isAuthenticated, (req, res) => {
   res.json(notifications.get(req.session.userId) || []);
+});
+
+// ========== HOME PAGE: LATEST & POPULAR ==========
+app.get('/', async (req, res) => {
+  try {
+    let allVideos = await Video.find({}).populate('owner');
+    // Sort for latest videos (by date descending)
+    let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
+    // Sort for popular videos (by likes descending)
+    let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
+
+    let latestHtml = '<h3>Latest Videos</h3><div class="row">';
+    latestVideos.forEach(video => {
+      latestHtml += `
+      <div class="col-md-4">
+        <div class="card video-card">
+          <img src="${video.thumbnail}" alt="Thumbnail"
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
+          <div class="card-body">
+            <h5 class="card-title">${video.title}</h5>
+            <p class="card-text">${video.description.substring(0, 60)}...</p>
+            <p class="text-muted"><small>Category: ${video.category}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+          </div>
+        </div>
+      </div>
+      `;
+    });
+    latestHtml += '</div>';
+
+    let popularHtml = '<h3 class="mt-4">Popular Videos</h3><div class="row">';
+    popularVideos.forEach(video => {
+      popularHtml += `
+      <div class="col-md-4">
+        <div class="card video-card">
+          <img src="${video.thumbnail}" alt="Thumbnail"
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
+          <div class="card-body">
+            <h5 class="card-title">${video.title}</h5>
+            <p class="card-text">${video.description.substring(0, 60)}...</p>
+            <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+          </div>
+        </div>
+      </div>
+      `;
+    });
+    popularHtml += '</div>';
+
+    let combinedHtml = `${latestHtml} ${popularHtml}`;
+    res.send(renderPage(combinedHtml, req));
+  } catch (err) {
+    console.error('Error loading home videos:', err);
+    res.send('Error loading videos.');
+  }
 });
 
 // ========== CATEGORY ROUTES (Music, Gaming, News, General) ==========
@@ -783,17 +784,12 @@ app.get('/video/:id', async (req, res) => {
     if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
       // The user is not the owner, so maybe subscribe/unsubscribe
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
-        subscribeButton = `
-        <button class="btn ${isSubscribed ? 'btn-secondary' : 'btn-danger'}" 
+      subscribeButton = `
+      <button class="btn ${isSubscribed ? 'btn-secondary' : 'btn-danger'}" 
           onclick="subscribeHandler('${video.owner._id}')>
     ${isSubscribed ? 'Subscribed' : 'Subscribe'} (${video.owner.subscribers.length})
   </button>
-
-        <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
-          <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
-        </form>
-        `;
-      }
+`;
 
     // Download button
     let downloadButton = `
@@ -834,8 +830,9 @@ app.get('/video/:id', async (req, res) => {
 
     // Comments
     let commentsHtml = '';
-    commentsHtml += `
-<div class="card comment-card ${c.pinned ? 'pinned-comment' : ''} mb-2">
+    video.comments.forEach(c => {
+      commentsHtml += `
+      <div class="card comment-card ${c.pinned ? 'pinned-comment' : ''} mb-2">
   <div class="card-body">
     ${c.pinned ? '<span class="badge badge-primary">Pinned</span>' : ''}
     <p><strong>${c.user.username}:</strong> ${c.comment}</p>
