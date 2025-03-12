@@ -141,8 +141,8 @@ function renderPage(content, req) {
     <style>
         :root {
             --primary: #f8fafc;
-            --primary-hover: #f8fafc;
-            --dark: #1e293b;
+            --primary-hover: #4f46e5;
+            --dark: #f8fafc;
             --light: #f8fafc;
         }
 
@@ -220,7 +220,7 @@ function renderPage(content, req) {
 }
 
         footer {
-  background: #f8fafc;
+  background: #1e293b;
   padding: 3rem 0;
   margin-top: 4rem;
 }
