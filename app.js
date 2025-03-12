@@ -17,7 +17,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -238,11 +238,28 @@ function renderPage(content, req) {
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
-                    <!-- Keep existing nav items -->
-                </ul>
-                <ul class="navbar-nav">
-                    <!-- Keep existing auth items -->
-                </ul>
+          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
+          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
+          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
+          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
+          <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
+          ${
+            req.session.userId
+              ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
+                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
+              : ''
+          }
+          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
+        </ul>
+        <ul class="navbar-nav">
+          ${
+            req.session.userId
+              ? `<li class="nav-item"><a class="nav-link" href="/logout">Logout (${username})</a></li>`
+              : `<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+                 <li class="nav-item"><a class="nav-link" href="/signup">Sign Up</a></li>`
+          }
+        </ul>
             </div>
         </div>
     </nav>
@@ -262,9 +279,65 @@ function renderPage(content, req) {
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Keep existing scripts -->
-</body>
-</html>
+
+    <script>
+      // 1) Thumbnail preview with a mini autoplay on hover:
+      document.querySelectorAll('.video-thumbnail').forEach(img => {
+        img.addEventListener('mouseenter', function() {
+          const videoUrl = this.getAttribute('data-video');
+          // If there's no valid video file or it doesn't look like a video, do nothing
+          if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
+          const preview = document.createElement('video');
+          preview.src = videoUrl;
+          preview.autoplay = true;
+          preview.muted = true;
+          preview.loop = true;
+          preview.width = this.clientWidth;
+          preview.height = this.clientHeight;
+          preview.style.objectFit = 'cover';
+          this.parentNode.replaceChild(preview, this);
+        });
+      });
+
+      // 2) Preview images (profile pic, background pic, thumbnail) before uploading
+      function setupPreview(inputId, previewId) {
+        const inputEl = document.getElementById(inputId);
+        const previewEl = document.getElementById(previewId);
+        if (!inputEl || !previewEl) return;
+        inputEl.addEventListener('change', function() {
+          const file = this.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              previewEl.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+          } else {
+            previewEl.src = '';
+          }
+        });
+      }
+      // We call setupPreview for relevant fields in forms
+      setupPreview('profilePicInput', 'profilePicPreview');
+      setupPreview('backgroundPicInput', 'backgroundPicPreview');
+      setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
+
+      // 3) "Share" button using the Web Share API if available
+      function shareVideo(title) {
+        if (navigator.share) {
+          navigator.share({
+            title: title,
+            text: 'Check out this video on Baho ng Lahat!',
+            url: window.location.href
+          })
+          .catch(err => console.log('Share canceled or failed: ', err));
+        } else {
+          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+        }
+      }
+    </script>
+  </body>
+  </html>
   `;
 }
 
