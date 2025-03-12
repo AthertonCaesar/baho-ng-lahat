@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -34,7 +34,7 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Serve static files
+// Serve static files (uploads, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create required directories if they do not exist
@@ -54,7 +54,7 @@ const commentSchema = new mongoose.Schema({
   user:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   comment: String,
   date:    { type: Date, default: Date.now },
-  hearted: { type: Boolean, default: false }
+  hearted: { type: Boolean, default: false } // If the video owner "hearted" this comment
 });
 
 const videoSchema = new mongoose.Schema({
@@ -67,7 +67,7 @@ const videoSchema = new mongoose.Schema({
   likes:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   dislikes:    [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   comments:    [commentSchema],
-  pinnedComment: { type: mongoose.Schema.Types.ObjectId, default: null },
+  pinnedComment: { type: mongoose.Schema.Types.ObjectId, default: null }, // The ID of a pinned comment
   uploadDate:  { type: Date, default: Date.now }
 });
 
@@ -141,7 +141,7 @@ function isAdmin(req, res, next) {
   });
 }
 
-// ================== MINIMAL COLOR THEME (WHITE BACKGROUND, DARK NAV) ==================
+// ================== MINIMAL MODERN DESIGN ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -153,7 +153,7 @@ function renderPage(content, req) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- Favicon -->
     <link rel="icon" href="/uploads/logo.png" type="image/png">
-    <!-- Google Font: "Inter" for modern look -->
+    <!-- Google Font: "Inter" -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap">
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
@@ -290,7 +290,7 @@ function renderPage(content, req) {
       ${content}
     </div>
     <footer>
-      <p>By Villamor Gelera — Version 1.0.0</p>
+      <p>By Villamor Gelera — A Non‐Biased, Uncensored Website</p>
     </footer>
 
     <!-- Bootstrap JS -->
@@ -314,8 +314,7 @@ function renderPage(content, req) {
           this.parentNode.replaceChild(preview, this);
         });
       });
-
-      // 2) Preview images (profile pic, background pic, thumbnail) before uploading
+      // 2) Preview images
       function setupPreview(inputId, previewId) {
         const inputEl = document.getElementById(inputId);
         const previewEl = document.getElementById(previewId);
@@ -336,8 +335,7 @@ function renderPage(content, req) {
       setupPreview('profilePicInput', 'profilePicPreview');
       setupPreview('backgroundPicInput', 'backgroundPicPreview');
       setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
-
-      // 3) "Share" button using the Web Share API if available
+      // 3) "Share" button
       function shareVideo(title) {
         if (navigator.share) {
           navigator.share({
@@ -347,7 +345,7 @@ function renderPage(content, req) {
           })
           .catch(err => console.log('Share canceled or failed: ', err));
         } else {
-          alert('Sharing not supported in this browser. Copy link: ' + window.location.href);
+          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
         }
       }
     </script>
@@ -357,59 +355,46 @@ function renderPage(content, req) {
 }
 
 // ================== ROUTE SYNONYMS ==================
-// If user tries uppercase or spaced routes, we redirect them:
 app.get('/log in',    (req, res) => res.redirect('/login'));
 app.get('/Log in',    (req, res) => res.redirect('/login'));
 app.get('/LOG IN',    (req, res) => res.redirect('/login'));
 app.get('/sign up',   (req, res) => res.redirect('/signup'));
 app.get('/Sign up',   (req, res) => res.redirect('/signup'));
 app.get('/SIGN UP',   (req, res) => res.redirect('/signup'));
-app.get('/Profile',   (req, res) => res.redirect('/profile'));
-app.get('/Music',     (req, res) => res.redirect('/music'));
-app.get('/MUSIC',     (req, res) => res.redirect('/music'));
-app.get('/Gaming',    (req, res) => res.redirect('/gaming'));
-app.get('/GAMING',    (req, res) => res.redirect('/gaming'));
-app.get('/News',      (req, res) => res.redirect('/news'));
-app.get('/NEWS',      (req, res) => res.redirect('/news'));
-app.get('/General',   (req, res) => res.redirect('/general'));
-app.get('/GENERAL',   (req, res) => res.redirect('/general'));
-app.get('/Live',      (req, res) => res.redirect('/live'));
-app.get('/LIVE',      (req, res) => res.redirect('/live'));
-app.get('/Upload',    (req, res) => res.redirect('/upload'));
-app.get('/UPLOAD',    (req, res) => res.redirect('/upload'));
+app.get('/log out',   (req, res) => res.redirect('/logout'));
+app.get('/LogOut',    (req, res) => res.redirect('/logout'));
+app.get('/LOGOUT',    (req, res) => res.redirect('/logout'));
+
+app.get('/Music',   (req, res) => res.redirect('/music'));
+app.get('/MUSIC',   (req, res) => res.redirect('/music'));
+app.get('/Gaming',  (req, res) => res.redirect('/gaming'));
+app.get('/GAMING',  (req, res) => res.redirect('/gaming'));
+app.get('/News',    (req, res) => res.redirect('/news'));
+app.get('/NEWS',    (req, res) => res.redirect('/news'));
+app.get('/General', (req, res) => res.redirect('/general'));
+app.get('/GENERAL', (req, res) => res.redirect('/general'));
+app.get('/Live',    (req, res) => res.redirect('/live'));
+app.get('/LIVE',    (req, res) => res.redirect('/live'));
+
+app.get('/Upload',  (req, res) => res.redirect('/upload'));
+app.get('/UPLOAD',  (req, res) => res.redirect('/upload'));
+
 app.get('/Assistant', (req, res) => res.redirect('/assistant'));
 app.get('/ASSISTANT', (req, res) => res.redirect('/assistant'));
+
 app.get('/Account Settings', (req, res) => res.redirect('/accountSettings'));
 app.get('/ACCOUNT SETTINGS', (req, res) => res.redirect('/accountSettings'));
-app.get('/Admin',     (req, res) => res.redirect('/admin'));
-app.get('/ADMIN',     (req, res) => res.redirect('/admin'));
 
-// If the user tries /profile with no ID, we redirect them to their own profile if logged in:
+app.get('/Admin',  (req, res) => res.redirect('/admin'));
+app.get('/ADMIN',  (req, res) => res.redirect('/admin'));
+
+app.get('/Profile', isAuthenticated, (req, res) => res.redirect('/profile/' + req.session.userId));
+app.get('/PROFILE', isAuthenticated, (req, res) => res.redirect('/profile/' + req.session.userId));
+
+// If the user tries /profile with no ID, go to their own
 app.get('/profile', isAuthenticated, (req, res) => {
   res.redirect('/profile/' + req.session.userId);
 });
-
-// Similarly, if they type /LogOut or uppercase:
-app.get('/LogOut', (req, res) => res.redirect('/logout'));
-app.get('/LOGOUT', (req, res) => res.redirect('/logout'));
-
-// ========== EVERYTHING ELSE ==========
-
-// All actual routes are defined below in the final code snippet. 
-// We'll define them in a single shot so you can run this one file 
-// without "Cannot GET" or "Cannot POST" errors.
-
-//
-// ===> PASTE THE REST OF THE CODE FROM THE PREVIOUS "GIANT CODE" HERE <===
-//     (including pinned admin logic, pinned/hearted comments, 
-//     synonyms for route synonyms, account settings, etc.)
-//
-
-// Because the code is extremely large, we've placed synonyms here 
-// at the top. Then you paste the main code from the previous snippet 
-// (the one that ends with `app.listen(PORT, () => ...)`) below. 
-// Combined, they produce a single file with synonyms for everything 
-// plus all the actual route definitions.
 
 // ================== IMAGE RESIZE HELPERS ==================
 async function resizeTo1920x1080(inputPath) {
@@ -418,7 +403,7 @@ async function resizeTo1920x1080(inputPath) {
   await sharp(inputPath)
     .resize(1920, 1080, { fit: 'cover' })
     .toFile(outPath);
-  fs.unlinkSync(inputPath); // remove original
+  fs.unlinkSync(inputPath);
   return '/uploads/thumbnails/' + outName;
 }
 
@@ -442,7 +427,10 @@ async function resizeBackgroundPic(filePath) {
   return '/uploads/backgrounds/' + outputName;
 }
 
-// ================== AI ASSISTANT ==================
+// ================== MAIN FEATURES ==================
+// (AI assistant, search, home page, categories, auth, video routes, subscribe, user profile, admin, etc.)
+
+// ========== AI ASSISTANT ==========
 app.get('/assistant', isAuthenticated, (req, res) => {
   if (!req.session.assistantHistory) {
     req.session.assistantHistory = [];
@@ -472,9 +460,9 @@ app.post('/assistant', isAuthenticated, (req, res) => {
   if (!req.session.assistantHistory) {
     req.session.assistantHistory = [];
   }
+
   let answer = '';
   let qLower = question.toLowerCase();
-
   if (qLower.includes('hello') || qLower.includes('hi')) {
     answer = 'Hello! How can I help you today?';
   } else if (qLower.includes('how are you')) {
@@ -491,7 +479,7 @@ app.post('/assistant', isAuthenticated, (req, res) => {
   res.redirect('/assistant');
 });
 
-// ================== SEARCH ROUTE ==================
+// ========== SEARCH ==========
 app.get('/search', async (req, res) => {
   const term = (req.query.term || '').trim();
   if (!term) {
@@ -561,7 +549,6 @@ app.get('/', async (req, res) => {
     const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    // pinned admin
     let pinnedAdmin = allVideos.filter(v => {
       if (!v.owner) return false;
       if (!v.owner.isAdmin) return false;
@@ -640,7 +627,7 @@ app.get('/', async (req, res) => {
   }
 });
 
-// ========== CATEGORY ROUTES (Music, Gaming, News, General, Live) ==========
+// ========== CATEGORY ROUTES (music, gaming, news, general, live) ==========
 app.get('/music', async (req, res) => {
   try {
     let videos = await Video.find({ category: 'Music' });
@@ -801,8 +788,6 @@ app.get('/live', async (req, res) => {
 
 // ========== AUTH ROUTES (Signup, Login, Logout, Email Verify) ==========
 
-// We define synonyms for "/log in" => done above
-// Real route for /login
 app.get('/login', (req, res) => {
   const form = `
   <h2>Login</h2>
@@ -846,7 +831,6 @@ app.get('/logout', (req, res) => {
   res.redirect('/');
 });
 
-// Real route for /signup
 app.get('/signup', (req, res) => {
   const form = `
   <h2>Sign Up</h2>
@@ -908,8 +892,6 @@ app.get('/verifyEmail', async (req, res) => {
 });
 
 // ========== VIDEO ROUTES (Upload, Watch, Like/Dislike, Comment, Pin, Heart, Edit, Delete, Download) ==========
-
-// Upload
 app.get('/upload', isAuthenticated, (req, res) => {
   const form = `
   <h2>Upload Video</h2>
@@ -958,21 +940,19 @@ app.post('/upload', isAuthenticated, async (req, res) => {
 
     let thumbnailPath = '/uploads/thumbnails/default.png';
     if (req.files.thumbnailFile) {
-      // user-supplied thumbnail
       let thumbFile = req.files.thumbnailFile;
       let origThumbName = Date.now() + '-' + thumbFile.name;
       let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', origThumbName);
       await thumbFile.mv(thumbUploadPath);
-      // resize to 1920x1080
       thumbnailPath = await resizeTo1920x1080(thumbUploadPath);
     } else {
-      // auto-generate
+      // auto-generate from the video
       let autoThumb = Date.now() + '-auto.png';
       let autoThumbPath = path.join(__dirname, 'uploads', 'thumbnails', autoThumb);
       await new Promise((resolve) => {
         ffmpeg(videoUploadPath)
           .on('end', () => {
-            // after screenshot, resize it
+            // after screenshot, we resize
             sharp(autoThumbPath)
               .resize(1920, 1080, { fit: 'cover' })
               .toBuffer()
@@ -1015,17 +995,16 @@ app.post('/upload', isAuthenticated, async (req, res) => {
   }
 });
 
-// Watch
+// Watch, Like, Dislike, Comment, Pin, Heart, Edit, Delete, Download
+// ...
+// For brevity, define them carefully:
+
 app.get('/video/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
     if (!video) return res.send(renderPage('<h2>Video not found.</h2>', req));
 
-    let suggested = await Video.find({
-      category: video.category,
-      _id: { $ne: video._id }
-    }).limit(5);
-
+    let suggested = await Video.find({ category: video.category, _id: { $ne: video._id } }).limit(5);
     let suggestedHtml = '';
     suggested.forEach(sv => {
       let showThumb = sv.thumbnail && !sv.thumbnail.endsWith('default.png');
@@ -1096,10 +1075,8 @@ app.get('/video/:id', async (req, res) => {
         ? ' <span class="badge badge-info">Pinned</span>'
         : '';
       let heartBadge = c.hearted ? ' <span class="badge badge-danger">Hearted</span>' : '';
-
       let ownerActions = '';
       if (req.session.userId && req.session.userId === video.owner._id.toString()) {
-        // pin/unpin
         if (video.pinnedComment && video.pinnedComment.toString() === c._id.toString()) {
           ownerActions += `
             <form method="POST" action="/unpinComment/${video._id}/${c._id}" style="display:inline;">
@@ -1113,7 +1090,6 @@ app.get('/video/:id', async (req, res) => {
             </form>
           `;
         }
-        // heart/unheart
         if (c.hearted) {
           ownerActions += `
             <form method="POST" action="/unheartComment/${video._id}/${c._id}" style="display:inline;">
@@ -1128,13 +1104,7 @@ app.get('/video/:id', async (req, res) => {
           `;
         }
       }
-
-      commentsHtml += `
-        <p>
-          <strong>${c.user.username}:</strong> ${c.comment}${pinnedBadge}${heartBadge}
-          ${ownerActions}
-        </p>
-      `;
+      commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}${pinnedBadge}${heartBadge} ${ownerActions}</p>`;
     });
 
     let videoPage = `
@@ -1145,9 +1115,7 @@ app.get('/video/:id', async (req, res) => {
             <source src="${video.filePath}" type="video/mp4">
             Your browser does not support the video tag.
           </video>
-          <p class="mt-2">
-            <span class="category-badge">${video.category}</span>
-          </p>
+          <p class="mt-2"><span class="category-badge">${video.category}</span></p>
           <p>${video.description}</p>
           <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
           ${subscribeButton} ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
@@ -1169,7 +1137,7 @@ app.get('/video/:id', async (req, res) => {
   }
 });
 
-// Like / Dislike
+// Like
 app.post('/like/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -1187,6 +1155,7 @@ app.post('/like/:id', isAuthenticated, async (req, res) => {
   }
 });
 
+// Dislike
 app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -1217,7 +1186,7 @@ app.post('/comment/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Pin / Unpin comment
+// Pin / Unpin
 app.post('/pinComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.videoId);
@@ -1373,7 +1342,6 @@ app.get('/download/:id', async (req, res) => {
 });
 
 // ========== SUBSCRIBE / UNSUBSCRIBE ==========
-
 app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   try {
     let owner = await User.findById(req.params.ownerId);
@@ -1397,94 +1365,25 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
 
 // ========== USER PROFILE & ACCOUNT SETTINGS ==========
 
-app.get('/profile/:id', async (req, res) => {
+// "profile" route is above. We define extra routes to fix "change profile picture."
+
+app.post('/changeProfilePic', isAuthenticated, async (req, res) => {
   try {
-    let userProfile = await User.findById(req.params.id);
-    if (!userProfile) return res.send('User not found.');
-    let videos = await Video.find({ owner: req.params.id });
-
-    let videosHtml = '<div class="row">';
-    videos.forEach(video => {
-      let showThumb = video.thumbnail && !video.thumbnail.endsWith('default.png');
-      let thumbTag = showThumb
-        ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">`
-        : '';
-      videosHtml += `
-        <div class="col-md-4 mb-3">
-          <div class="card video-card">
-            ${thumbTag}
-            <div class="card-body">
-              <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch Video</a>
-            </div>
-          </div>
-        </div>
-      `;
-    });
-    videosHtml += '</div>';
-
-    let showProfilePic = userProfile.profilePic && !userProfile.profilePic.endsWith('default.png');
-    let profilePicTag = showProfilePic
-      ? `<img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px;object-fit:cover;">`
-      : '';
-
-    let liveSection = '';
-    if (userProfile.isLive) {
-      liveSection = `
-      <div class="alert alert-success mt-3">
-        <strong>${userProfile.username} is LIVE!</strong><br>
-        ${userProfile.liveLink
-          ? `<iframe src="${userProfile.liveLink}" width="100%" height="315" allowfullscreen></iframe>`
-          : '(No live link provided)'}
-      </div>`;
+    if (!req.files || !req.files.profilePic) {
+      return res.send('No profile pic file uploaded.');
     }
-
-    let profileHtml = `
-    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge badge-info">Verified</span>' : ''}</h2>
-    ${profilePicTag}
-    <p class="mt-2">${userProfile.about}</p>
-    <p>Subscribers: ${userProfile.subscribers.length}</p>
-    <p>Email Verified: ${userProfile.emailVerified ? 'Yes' : 'No'}</p>
-    ${liveSection}
-    <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
-    ${videosHtml}
-    `;
-    res.send(renderPage(profileHtml, req));
-  } catch (err) {
-    console.error('Profile error:', err);
-    res.send('Error loading profile.');
-  }
-});
-
-app.post('/updateProfile', isAuthenticated, async (req, res) => {
-  try {
     let user = await User.findById(req.session.userId);
     if(!user) return res.send('User not found.');
 
-    // Profile pic
-    if (req.files && req.files.profilePic) {
-      let pic = req.files.profilePic;
-      let originalPath = path.join(__dirname, 'uploads', 'profiles', Date.now() + '-' + pic.name);
-      await pic.mv(originalPath);
-      user.profilePic = await resizeProfilePic(originalPath, 400, 400);
-    }
-    // Background pic
-    if (req.files && req.files.backgroundPic) {
-      let bg = req.files.backgroundPic;
-      let originalBgPath = path.join(__dirname, 'uploads', 'backgrounds', Date.now() + '-' + bg.name);
-      await bg.mv(originalBgPath);
-      user.backgroundPic = await resizeBackgroundPic(originalBgPath);
-    }
-    user.about = req.body.about;
+    let pic = req.files.profilePic;
+    let originalPath = path.join(__dirname, 'uploads', 'profiles', Date.now() + '-' + pic.name);
+    await pic.mv(originalPath);
+    user.profilePic = await resizeProfilePic(originalPath, 400, 400);
     await user.save();
-    res.redirect('/profile/' + user._id);
+    res.redirect('/accountSettings');
   } catch (err) {
-    console.error('Profile update error:', err);
-    res.send('Error updating profile.');
+    console.error('changeProfilePic error:', err);
+    res.send('Error changing profile picture.');
   }
 });
 
@@ -1501,6 +1400,16 @@ app.get('/accountSettings', isAuthenticated, async (req, res) => {
           ? ''
           : `<p>Your email is not verified. <a href="/verifyEmailHelp">Click here</a> to see how to verify.</p>`
       }
+      <hr>
+      <h4>Change Profile Picture</h4>
+      <form method="POST" action="/changeProfilePic" enctype="multipart/form-data">
+        <div class="form-group">
+          <label>New Profile Picture:</label>
+          <input type="file" name="profilePic" class="form-control-file" accept="image/*" id="profilePicInput" />
+          <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
+        </div>
+        <button type="submit" class="btn btn-primary">Change Profile Picture</button>
+      </form>
       <hr>
       <h4>Change Password</h4>
       <form method="POST" action="/changePassword">
@@ -1580,7 +1489,6 @@ app.post('/changePassword', isAuthenticated, async (req, res) => {
     if (!user) return res.send('User not found.');
     const valid = await bcrypt.compare(oldPassword, user.password);
     if (!valid) return res.send('Old password is incorrect.');
-    
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
     res.send('<p>Password changed successfully! <a href="/accountSettings">Back to settings</a></p>');
@@ -1686,7 +1594,6 @@ app.post('/ban/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Legacy "verify" route for old `verified` field
 app.post('/verify/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
