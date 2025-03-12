@@ -1,14 +1,17 @@
+// app.js
+
 // ================== DEPENDENCIES ==================
-const express       = require('express');
-const mongoose      = require('mongoose');
-const bcrypt        = require('bcryptjs');
-const session       = require('express-session');
-const fileUpload    = require('express-fileupload');
-const path          = require('path');
-const fs            = require('fs');
+const express         = require('express');
+const mongoose        = require('mongoose');
+const bcrypt          = require('bcryptjs');
+const session         = require('express-session');
+const fileUpload      = require('express-fileupload');
+const path            = require('path');
+const fs              = require('fs');
+const { v4: uuidv4 }  = require('uuid'); // For generating tokens/keys
 
 // For auto-generating thumbnails (requires FFmpeg):
-const ffmpeg        = require('fluent-ffmpeg');
+const ffmpeg          = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -49,18 +52,27 @@ dirs.forEach(dir => {
 
 // ================== MONGOOSE SCHEMAS ==================
 const userSchema = new mongoose.Schema({
-  username:     { type: String, unique: true },
-  password:     String,
-  isAdmin:      { type: Boolean, default: false },
-  banned:       { type: Boolean, default: false },
-  verified:     { type: Boolean, default: false },
-  subscribers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic:   { type: String, default: '/uploads/profiles/default.png' },
-  backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
-  about:        { type: String, default: '' },
+  username:      { type: String, unique: true },
+  email:         { type: String, unique: true },
+  password:      String,
+  isAdmin:       { type: Boolean, default: false },
+  banned:        { type: Boolean, default: false },
+  verified:      { type: Boolean, default: false }, // legacy from earlier
+  subscribers:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  profilePic:    { type: String, default: '/uploads/profiles/default.png' },
+  backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
+  about:         { type: String, default: '' },
+
   // Live streaming placeholders:
-  isLive:       { type: Boolean, default: false },
-  liveLink:     { type: String, default: '' }
+  isLive:        { type: Boolean, default: false },
+  liveLink:      { type: String, default: '' },
+
+  // Email verification
+  emailVerified: { type: Boolean, default: false },
+  verifyToken:   { type: String, default: '' },
+
+  // Stream key
+  streamKey:     { type: String, default: '' }
 });
 
 const videoSchema = new mongoose.Schema({
@@ -91,9 +103,13 @@ async function createDefaultAdmin() {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       admin = new User({
         username: 'Villamor Gelera',
+        email: 'admin@bahonlahat.com',
         password: hashedPassword,
         isAdmin: true,
-        verified: true
+        verified: true,
+        emailVerified: true,
+        verifyToken: '',
+        streamKey: uuidv4()
       });
       await admin.save();
       console.log('Default admin created: Villamor Gelera, password: admin123');
@@ -126,7 +142,7 @@ async function isAdmin(req, res, next) {
   }
 }
 
-// ================== HTML RENDERER (WITH SCRIPTS) ==================
+// ================== HTML RENDERER ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -135,7 +151,7 @@ function renderPage(content, req) {
   <html>
   <head>
     <title>Baho ng Lahat</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- Responsive for phones, tablets, etc. -->
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
@@ -166,11 +182,25 @@ function renderPage(content, req) {
         max-width: 200px;
         height: auto;
       }
+      .tagline {
+        font-size: 0.85rem;
+        font-style: italic;
+      }
+      .category-badge {
+        display: inline-block;
+        padding: 2px 6px;
+        font-size: 0.75rem;
+        background-color: #eee;
+        border-radius: 4px;
+      }
     </style>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-light bg-light">
-      <a class="navbar-brand" href="/">Baho ng Lahat</a>
+      <a class="navbar-brand" href="/">
+        Baho ng Lahat
+        <div class="tagline">A Non‐Biased, Uncensored Website</div>
+      </a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
         aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon">☰</span>
@@ -186,7 +216,8 @@ function renderPage(content, req) {
           ${
             req.session.userId
               ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
+                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>
+                 <li class="nav-item"><a class="nav-link" href="/accountSettings">Account Settings</a></li>`
               : ''
           }
           ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
@@ -213,11 +244,10 @@ function renderPage(content, req) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-      // 1) Thumbnail preview with a mini autoplay on hover:
+      // 1) Thumbnail preview with mini autoplay on hover:
       document.querySelectorAll('.video-thumbnail').forEach(img => {
         img.addEventListener('mouseenter', function() {
           const videoUrl = this.getAttribute('data-video');
-          // If there's no valid video file or it doesn't look like a video, do nothing
           if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
           const preview = document.createElement('video');
           preview.src = videoUrl;
@@ -249,7 +279,6 @@ function renderPage(content, req) {
           }
         });
       }
-      // We call setupPreview for relevant fields in forms
       setupPreview('profilePicInput', 'profilePicPreview');
       setupPreview('backgroundPicInput', 'backgroundPicPreview');
       setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
@@ -282,20 +311,28 @@ app.get('/', async (req, res) => {
     // Sort for popular videos (by likes descending)
     let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
 
-    let latestHtml = '<h3>Latest Videos</h3><div class="row">';
+    let latestHtml = `
+      <h3 class="mb-3">Latest Videos</h3>
+      <div class="row">
+    `;
     latestVideos.forEach(video => {
+      // If video.thumbnail is still default, we skip showing the image
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
+
       latestHtml += `
-      <div class="col-md-4">
+      <div class="col-md-4 mb-3">
         <div class="card video-card">
-          <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
-               style="max-height:200px; object-fit:cover;">
+          ${thumbnailTag}
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <p class="text-muted"><small>Category: ${video.category}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            <span class="category-badge">${video.category}</span>
+            <a href="/video/${video._id}" class="btn btn-primary btn-block mt-2">Watch</a>
           </div>
         </div>
       </div>
@@ -303,20 +340,27 @@ app.get('/', async (req, res) => {
     });
     latestHtml += '</div>';
 
-    let popularHtml = '<h3 class="mt-4">Popular Videos</h3><div class="row">';
+    let popularHtml = `
+      <h3 class="mt-4 mb-3">Popular Videos</h3>
+      <div class="row">
+    `;
     popularVideos.forEach(video => {
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
+
       popularHtml += `
-      <div class="col-md-4">
+      <div class="col-md-4 mb-3">
         <div class="card video-card">
-          <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
-               style="max-height:200px; object-fit:cover;">
+          ${thumbnailTag}
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary btn-block">Watch</a>
           </div>
         </div>
       </div>
@@ -338,13 +382,16 @@ app.get('/music', async (req, res) => {
     let videos = await Video.find({ category: 'Music' });
     let videoHtml = '<h2>Music Videos</h2><div class="row">';
     videos.forEach(video => {
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
       videoHtml += `
-        <div class="col-md-4">
+        <div class="col-md-4 mb-3">
           <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">
+            ${thumbnailTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -366,13 +413,16 @@ app.get('/gaming', async (req, res) => {
     let videos = await Video.find({ category: 'Gaming' });
     let videoHtml = '<h2>Gaming Videos</h2><div class="row">';
     videos.forEach(video => {
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
       videoHtml += `
-        <div class="col-md-4">
+        <div class="col-md-4 mb-3">
           <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">
+            ${thumbnailTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -394,13 +444,16 @@ app.get('/news', async (req, res) => {
     let videos = await Video.find({ category: 'News' });
     let videoHtml = '<h2>News Videos</h2><div class="row">';
     videos.forEach(video => {
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
       videoHtml += `
-        <div class="col-md-4">
+        <div class="col-md-4 mb-3">
           <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">
+            ${thumbnailTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -422,13 +475,16 @@ app.get('/general', async (req, res) => {
     let videos = await Video.find({ category: 'General' });
     let videoHtml = '<h2>General Videos</h2><div class="row">';
     videos.forEach(video => {
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
+                class="card-img-top video-thumbnail"
+                data-video="${video.filePath}"
+                style="max-height:200px; object-fit:cover;">`
+        : '';
       videoHtml += `
-        <div class="col-md-4">
+        <div class="col-md-4 mb-3">
           <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">
+            ${thumbnailTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -461,9 +517,10 @@ app.get('/live', async (req, res) => {
               <p>${u.about}</p>
               ${
                 u.liveLink
-                  ? `<iframe src="${u.liveLink}" width="560" height="315" allowfullscreen></iframe>`
+                  ? `<iframe src="${u.liveLink}" width="100%" height="315" allowfullscreen></iframe>`
                   : '<p>(No live link provided)</p>'
               }
+              <p class="mt-2"><strong>Stream Key:</strong> ${u.streamKey}</p>
             </div>
           </div>
         `;
@@ -482,10 +539,15 @@ app.get('/live', async (req, res) => {
 app.get('/signup', (req, res) => {
   const form = `
   <h2>Sign Up</h2>
+  <p>By creating an account, you can upload videos, go live with a personal stream key, and more!</p>
   <form method="POST" action="/signup">
     <div class="form-group">
       <label>Username:</label>
       <input type="text" name="username" class="form-control" required />
+    </div>
+    <div class="form-group">
+      <label>Email:</label>
+      <input type="email" name="email" class="form-control" required />
     </div>
     <div class="form-group">
       <label>Password:</label>
@@ -498,15 +560,42 @@ app.get('/signup', (req, res) => {
 });
 
 app.post('/signup', async (req, res) => {
-  const { username, password } = req.body;
+  const { username, email, password } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ username, password: hashedPassword });
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      verifyToken: uuidv4(),    // for email verification
+      streamKey:   uuidv4()     // generate initial stream key
+    });
     await newUser.save();
-    res.redirect('/login');
+    // In a real app, you'd send an actual email with `newUser.verifyToken`
+    res.send(`
+      <p>Account created! Check your email for a verification link (not implemented here).<br>
+      <a href="/login">Click here to log in</a></p>
+    `);
   } catch (err) {
     console.error('Error signing up:', err);
-    res.send('Error signing up. Username might already be taken.');
+    res.send('Error signing up. Username or email might already be taken.');
+  }
+});
+
+// Email verification route (fake email approach)
+app.get('/verifyEmail', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.send('No token provided.');
+  try {
+    let user = await User.findOne({ verifyToken: token });
+    if (!user) return res.send('Invalid token.');
+    user.emailVerified = true;
+    user.verifyToken   = ''; // clear token
+    await user.save();
+    res.send('Email verified successfully! You can now log in. <a href="/login">Login</a>');
+  } catch (err) {
+    console.error('verifyEmail error:', err);
+    res.send('Error verifying email.');
   }
 });
 
@@ -516,8 +605,8 @@ app.get('/login', (req, res) => {
   <h2>Login</h2>
   <form method="POST" action="/login">
     <div class="form-group">
-      <label>Username:</label>
-      <input type="text" name="username" class="form-control" required />
+      <label>Username or Email:</label>
+      <input type="text" name="loginField" class="form-control" required />
     </div>
     <div class="form-group">
       <label>Password:</label>
@@ -530,13 +619,16 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
+  const { loginField, password } = req.body;
   try {
-    const user = await User.findOne({ username });
-    if (!user) return res.send('Invalid username or password.');
+    // loginField can be username or email
+    let user = await User.findOne({
+      $or: [{ username: loginField }, { email: loginField }]
+    });
+    if (!user) return res.send('Invalid username/email or password.');
     if (user.banned) return res.send('Your account has been banned.');
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.send('Invalid username or password.');
+    if (!valid) return res.send('Invalid username/email or password.');
     req.session.userId   = user._id.toString();
     req.session.username = user.username;
     req.session.isAdmin  = user.isAdmin;
@@ -603,29 +695,26 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     let videoUploadPath = path.join(__dirname, 'uploads', 'videos', Date.now() + '-' + videoFile.name);
     await videoFile.mv(videoUploadPath);
 
-    // 2) If user didn't provide a thumbnail, auto-generate one from the video
+    // 2) If user didn't provide a thumbnail, auto-generate one
     let thumbnailPath = '/uploads/thumbnails/default.png';
     if (req.files.thumbnailFile) {
-      // They uploaded a custom thumbnail
+      // custom thumbnail
       let thumbFile = req.files.thumbnailFile;
       let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', Date.now() + '-' + thumbFile.name);
       await thumbFile.mv(thumbUploadPath);
       thumbnailPath = '/uploads/thumbnails/' + path.basename(thumbUploadPath);
     } else {
-      // Auto-generate using FFmpeg
+      // auto-generate using FFmpeg
       let thumbFileName = Date.now() + '-auto.png';
       let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', thumbFileName);
-      // We'll pick a frame at 1 second
-      await new Promise((resolve, reject) => {
+      await new Promise((resolve) => {
         ffmpeg(videoUploadPath)
           .on('end', () => {
-            console.log('Thumbnail generated');
             thumbnailPath = '/uploads/thumbnails/' + thumbFileName;
             resolve();
           })
           .on('error', err => {
             console.error('Thumbnail generation error:', err);
-            // fallback to default
             resolve();
           })
           .screenshots({
@@ -654,7 +743,7 @@ app.post('/upload', isAuthenticated, async (req, res) => {
   }
 });
 
-// View Video and Actions
+// View Video + Actions
 app.get('/video/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
@@ -668,13 +757,17 @@ app.get('/video/:id', async (req, res) => {
 
     let suggestedHtml = '';
     suggested.forEach(sv => {
+      // If no custom thumbnail, skip image
+      let thumbTag = (sv.thumbnail && !sv.thumbnail.endsWith('default.png'))
+        ? `<img src="${sv.thumbnail}" alt="Thumbnail"
+                 class="video-thumbnail"
+                 data-video="${sv.filePath}"
+                 style="width:100%; max-height:100px; object-fit:cover;">`
+        : '';
       suggestedHtml += `
       <div class="card mb-2">
         <div class="card-body p-2">
-          <img src="${sv.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${sv.filePath}"
-               style="width:100%; max-height:100px; object-fit:cover;">
+          ${thumbTag}
           <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
           <a href="/video/${sv._id}" class="btn btn-sm btn-primary">Watch</a>
         </div>
@@ -682,10 +775,9 @@ app.get('/video/:id', async (req, res) => {
       `;
     });
 
-    // Check if the viewer is subscribed to the owner
+    // Subscribe button
     let subscribeButton = '';
     if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
-      // The user is not the owner, so maybe subscribe/unsubscribe
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
       subscribeButton = `
       <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
@@ -704,6 +796,8 @@ app.get('/video/:id', async (req, res) => {
     let dislikeBtn = '';
     let editDelete = '';
     let commentForm = '';
+    let shareButton = `<button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>`;
+
     if (req.session.userId) {
       likeBtn = `
         <form method="POST" action="/like/${video._id}" style="display:inline;">
@@ -737,12 +831,6 @@ app.get('/video/:id', async (req, res) => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
 
-    // "Share" button (calls shareVideo(...) in the script)
-    let shareButton = `
-      <button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>
-    `;
-
-    // Layout: main video left (col-8), suggestions right (col-4)
     let videoPage = `
       <div class="row">
         <div class="col-md-8">
@@ -751,11 +839,12 @@ app.get('/video/:id', async (req, res) => {
             <source src="${video.filePath}" type="video/mp4">
             Your browser does not support the video tag.
           </video>
-          <p>Category: ${video.category}</p>
+          <p class="mt-2">
+            <span class="category-badge">${video.category}</span>
+          </p>
           <p>${video.description}</p>
           <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
-          ${subscribeButton}
-          ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
+          ${subscribeButton} ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
           <hr>
           <h4>Comments</h4>
           ${commentsHtml}
@@ -783,10 +872,8 @@ app.post('/like/:id', isAuthenticated, async (req, res) => {
     video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     // Toggle like
     if (video.likes.includes(req.session.userId)) {
-      // Already liked -> remove like
       video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     } else {
-      // Not liked -> add
       video.likes.push(req.session.userId);
     }
     await video.save();
@@ -805,10 +892,8 @@ app.post('/dislike/:id', isAuthenticated, async (req, res) => {
     video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     // Toggle dislike
     if (video.dislikes.includes(req.session.userId)) {
-      // Already disliked -> remove dislike
       video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     } else {
-      // Not disliked -> add
       video.dislikes.push(req.session.userId);
     }
     await video.save();
@@ -934,10 +1019,8 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
     }
     // Toggle subscription
     if (owner.subscribers.includes(user._id)) {
-      // Already subscribed -> unsubscribe
       owner.subscribers = owner.subscribers.filter(sid => sid.toString() !== user._id.toString());
     } else {
-      // Not subscribed -> subscribe
       owner.subscribers.push(user._id);
     }
     await owner.save();
@@ -949,22 +1032,25 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
 
 // ========== USER PROFILE ==========
 
-// View Profile
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
     if (!userProfile) return res.send('User not found.');
-    // Fetch videos
     let videos = await Video.find({ owner: req.params.id });
+
+    // Build videos section
     let videosHtml = '<div class="row">';
     videos.forEach(video => {
-      videosHtml += `
-        <div class="col-md-4">
-          <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail"
+      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+        ? `<img src="${video.thumbnail}" alt="Thumbnail"
                  class="card-img-top video-thumbnail"
                  data-video="${video.filePath}"
-                 style="max-height:200px; object-fit:cover;">
+                 style="max-height:200px; object-fit:cover;">`
+        : '';
+      videosHtml += `
+        <div class="col-md-4 mb-3">
+          <div class="card video-card">
+            ${thumbnailTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -976,68 +1062,35 @@ app.get('/profile/:id', async (req, res) => {
     });
     videosHtml += '</div>';
 
+    // If profilePic is default, show a placeholder user icon
+    let profilePicTag = userProfile.profilePic && !userProfile.profilePic.endsWith('default.png')
+      ? `<img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">`
+      : `<img src="https://via.placeholder.com/150?text=No+Profile" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">`;
+
     let liveSection = '';
     if (userProfile.isLive) {
       liveSection = `
       <div class="alert alert-success mt-3">
         <strong>${userProfile.username} is LIVE!</strong><br>
         ${userProfile.liveLink
-          ? `<iframe src="${userProfile.liveLink}" width="560" height="315" allowfullscreen></iframe>`
+          ? `<iframe src="${userProfile.liveLink}" width="100%" height="315" allowfullscreen></iframe>`
           : '(No live link provided)'}
       </div>`;
     }
 
     let profileHtml = `
     <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge badge-info">Verified</span>' : ''}</h2>
-    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">
-    <p>${userProfile.about}</p>
+    ${profilePicTag}
+    <p class="mt-2">${userProfile.about}</p>
     <p>Subscribers: ${userProfile.subscribers.length}</p>
+    <p>Email Verified: ${userProfile.emailVerified ? 'Yes' : 'No'}</p>
+    <p><strong>Stream Key:</strong> ${userProfile.streamKey}</p>
     ${liveSection}
     <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
     ${videosHtml}
     `;
 
-    // If this is the owner, allow editing profile and live status
-    if(req.session.userId && req.session.userId === req.params.id) {
-      profileHtml += `
-      <hr>
-      <h3>Update Profile</h3>
-      <form method="POST" action="/updateProfile" enctype="multipart/form-data">
-        <div class="form-group">
-          <label>Profile Picture:</label>
-          <input type="file" name="profilePic" accept="image/*" class="form-control-file" id="profilePicInput" />
-          <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
-        </div>
-        <div class="form-group">
-          <label>Background Picture:</label>
-          <input type="file" name="backgroundPic" accept="image/*" class="form-control-file" id="backgroundPicInput" />
-          <img id="backgroundPicPreview" class="preview-img" alt="Background Pic Preview" />
-        </div>
-        <div class="form-group">
-          <label>About Me:</label>
-          <textarea name="about" class="form-control">${userProfile.about}</textarea>
-        </div>
-        <button type="submit" class="btn btn-primary">Update Profile</button>
-      </form>
-      <hr>
-      <h3>Live Stream Settings</h3>
-      <p>Current status: ${userProfile.isLive ? 'LIVE' : 'Offline'}</p>
-      <form method="POST" action="/setLiveLink">
-        <div class="form-group">
-          <label>Live Embed Link (e.g., YouTube embed URL):</label>
-          <input type="text" name="liveLink" class="form-control" value="${userProfile.liveLink}" />
-        </div>
-        <button type="submit" class="btn btn-info">Save Live Link</button>
-      </form>
-      <br>
-      <form method="POST" action="/goLive">
-        <button type="submit" class="btn btn-success" ${userProfile.isLive ? 'disabled' : ''}>Go Live</button>
-      </form>
-      <form method="POST" action="/stopLive" style="margin-top:5px;">
-        <button type="submit" class="btn btn-danger" ${userProfile.isLive ? '' : 'disabled'}>Stop Live</button>
-      </form>
-      `;
-    }
+    // If this is the owner, show nothing extra here because we have an Account Settings page
     res.send(renderPage(profileHtml, req));
   } catch (err) {
     console.error('Profile error:', err);
@@ -1045,29 +1098,122 @@ app.get('/profile/:id', async (req, res) => {
   }
 });
 
-// Update Profile
-app.post('/updateProfile', isAuthenticated, async (req, res) => {
+// ========== ACCOUNT SETTINGS ==========
+
+app.get('/accountSettings', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
     if(!user) return res.send('User not found.');
-    if(req.files && req.files.profilePic) {
-      let pic = req.files.profilePic;
-      let picPath = path.join(__dirname, 'uploads', 'profiles', Date.now() + '-' + pic.name);
-      await pic.mv(picPath);
-      user.profilePic = '/uploads/profiles/' + path.basename(picPath);
-    }
-    if(req.files && req.files.backgroundPic) {
-      let bg = req.files.backgroundPic;
-      let bgPath = path.join(__dirname, 'uploads', 'backgrounds', Date.now() + '-' + bg.name);
-      await bg.mv(bgPath);
-      user.backgroundPic = '/uploads/backgrounds/' + path.basename(bgPath);
-    }
-    user.about = req.body.about;
-    await user.save();
-    res.redirect('/profile/' + req.session.userId);
+
+    let settingsHtml = `
+      <h2>Account Settings</h2>
+      <p>Email: ${user.email}</p>
+      <p>Email Verified: ${user.emailVerified ? 'Yes' : 'No'}</p>
+      ${
+        user.emailVerified
+          ? ''
+          : `<p>Your email is not verified. <a href="/verifyEmailHelp">Click here to see how to verify</a></p>`
+      }
+      <hr>
+      <h4>Change Password</h4>
+      <form method="POST" action="/changePassword">
+        <div class="form-group">
+          <label>Old Password:</label>
+          <input type="password" name="oldPassword" class="form-control" required />
+        </div>
+        <div class="form-group">
+          <label>New Password:</label>
+          <input type="password" name="newPassword" class="form-control" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Change Password</button>
+      </form>
+      <hr>
+      <h4>Stream Key</h4>
+      <p>Current Key: ${user.streamKey}</p>
+      <form method="POST" action="/generateStreamKey">
+        <button type="submit" class="btn btn-info">Generate New Stream Key</button>
+      </form>
+      <hr>
+      <h4>Live Settings</h4>
+      <p>Current status: ${user.isLive ? 'LIVE' : 'Offline'}</p>
+      <form method="POST" action="/setLiveLink">
+        <div class="form-group">
+          <label>Live Embed Link (e.g., YouTube embed URL):</label>
+          <input type="text" name="liveLink" class="form-control" value="${user.liveLink}" />
+        </div>
+        <button type="submit" class="btn btn-info">Save Live Link</button>
+      </form>
+      <br>
+      <form method="POST" action="/goLive">
+        <button type="submit" class="btn btn-success" ${user.isLive ? 'disabled' : ''}>Go Live</button>
+      </form>
+      <form method="POST" action="/stopLive" style="margin-top:5px;">
+        <button type="submit" class="btn btn-danger" ${user.isLive ? '' : 'disabled'}>Stop Live</button>
+      </form>
+    `;
+    res.send(renderPage(settingsHtml, req));
   } catch (err) {
-    console.error('Profile update error:', err);
-    res.send('Error updating profile.');
+    console.error('AccountSettings error:', err);
+    res.send('Error loading account settings.');
+  }
+});
+
+// Just an info page about verifying email
+app.get('/verifyEmailHelp', isAuthenticated, (req, res) => {
+  const msg = `
+    <h2>Email Verification Help</h2>
+    <p>We do not currently send real emails. Your <strong>verifyToken</strong> was generated on sign up. 
+    You can visit <code>/verifyEmail?token=YOURTOKEN</code> to verify your email. 
+    <br>If you lost it, click below to regenerate a new token (then you'd theoretically get an email in a real system).</p>
+    <form method="POST" action="/resendVerification">
+      <button type="submit" class="btn btn-warning">Resend Verification Token</button>
+    </form>
+  `;
+  res.send(renderPage(msg, req));
+});
+
+// Resend verification token
+app.post('/resendVerification', isAuthenticated, async (req, res) => {
+  try {
+    let user = await User.findById(req.session.userId);
+    user.verifyToken = uuidv4();
+    await user.save();
+    res.send(`
+      <p>Your new verify token is: ${user.verifyToken}<br>
+      Use /verifyEmail?token=${user.verifyToken} in your browser to verify. 
+      (In a real app, this would be emailed to you.)</p>
+    `);
+  } catch (err) {
+    res.send('Error resending token.');
+  }
+});
+
+// Change Password
+app.post('/changePassword', isAuthenticated, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  try {
+    let user = await User.findById(req.session.userId);
+    if (!user) return res.send('User not found.');
+    const valid = await bcrypt.compare(oldPassword, user.password);
+    if (!valid) return res.send('Old password is incorrect.');
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    res.send('<p>Password changed successfully! <a href="/accountSettings">Back to settings</a></p>');
+  } catch (err) {
+    res.send('Error changing password.');
+  }
+});
+
+// Generate new stream key
+app.post('/generateStreamKey', isAuthenticated, async (req, res) => {
+  try {
+    let user = await User.findById(req.session.userId);
+    if(!user) return res.send('User not found.');
+    user.streamKey = uuidv4();
+    await user.save();
+    res.redirect('/accountSettings');
+  } catch (err) {
+    res.send('Error generating stream key.');
   }
 });
 
@@ -1079,7 +1225,7 @@ app.post('/setLiveLink', isAuthenticated, async (req, res) => {
     if(!user) return res.send('User not found.');
     user.liveLink = req.body.liveLink;
     await user.save();
-    res.redirect('/profile/' + user._id);
+    res.redirect('/accountSettings');
   } catch (err) {
     res.send('Error saving live link.');
   }
@@ -1092,7 +1238,7 @@ app.post('/goLive', isAuthenticated, async (req, res) => {
     if(!user) return res.send('User not found.');
     user.isLive = true;
     await user.save();
-    res.redirect('/profile/' + user._id);
+    res.redirect('/accountSettings');
   } catch (err) {
     res.send('Error going live.');
   }
@@ -1105,7 +1251,7 @@ app.post('/stopLive', isAuthenticated, async (req, res) => {
     if(!user) return res.send('User not found.');
     user.isLive = false;
     await user.save();
-    res.redirect('/profile/' + user._id);
+    res.redirect('/accountSettings');
   } catch (err) {
     res.send('Error stopping live.');
   }
@@ -1120,7 +1266,7 @@ app.get('/admin', isAdmin, async (req, res) => {
       userHtml += `
       <div class="card mb-2">
         <div class="card-body">
-          <p>${user.username} - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
+          <p>${user.username} (${user.email}) - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
              ${
                user._id.toString() !== req.session.userId
                  ? `<form style="display:inline;" method="POST" action="/ban/${user._id}">
@@ -1131,7 +1277,7 @@ app.get('/admin', isAdmin, async (req, res) => {
              ${
                !user.verified
                  ? `<form style="display:inline;" method="POST" action="/verify/${user._id}">
-                      <button class="btn btn-info btn-sm ml-2">Verify</button>
+                      <button class="btn btn-info btn-sm ml-2">Verify (Legacy Flag)</button>
                     </form>`
                  : ''
              }
@@ -1160,7 +1306,7 @@ app.post('/ban/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Verify a User (Admin only)
+// Legacy "verify" route for the old `verified` field
 app.post('/verify/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
