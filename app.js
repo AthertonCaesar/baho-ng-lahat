@@ -152,6 +152,9 @@ function renderPage(content, req) {
   <head>
     <title>Baho ng Lahat</title>
     <meta name="viewport" content="width=device-width, initial-scale=1"> <!-- Responsive for phones, tablets, etc. -->
+    <!-- Favicon (change /uploads/logo.png to your actual logo path) -->
+    <link rel="icon" href="/uploads/logo.png" type="image/png">
+
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
@@ -236,7 +239,7 @@ function renderPage(content, req) {
       ${content}
     </div>
     <footer class="text-center">
-      <p>By Villamor Gelera</p>
+      <p>By Villamor Gelera &mdash; Version 1.0.0</p>
     </footer>
 
     <!-- Bootstrap JS (for navbar toggling) -->
@@ -302,26 +305,51 @@ function renderPage(content, req) {
   `;
 }
 
-// ========== HOME PAGE: LATEST & POPULAR ==========
+// ========== HOME PAGE: LATEST & POPULAR (with admin pin for 1 week) ==========
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
-    // Sort for latest videos (by date descending)
-    let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
-    // Sort for popular videos (by likes descending)
-    let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
 
+    // Separate pinned admin videos (less than 7 days old)
+    const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    // LATEST: pinned first (sort by date desc), then normal
+    let pinnedAdminVideosLatest = allVideos.filter(v => {
+      if (!v.owner) return false;
+      if (!v.owner.isAdmin) return false;
+      const age = now - v.uploadDate.getTime();
+      return age < ONE_WEEK; // less than 7 days old
+    });
+    pinnedAdminVideosLatest.sort((a, b) => b.uploadDate - a.uploadDate);
+
+    let nonPinnedVideosLatest = allVideos.filter(v => !pinnedAdminVideosLatest.includes(v));
+    nonPinnedVideosLatest.sort((a, b) => b.uploadDate - a.uploadDate);
+
+    let finalLatest = [...pinnedAdminVideosLatest, ...nonPinnedVideosLatest].slice(0, 5);
+
+    // POPULAR: pinned first (sort by likes desc), then normal
+    let pinnedAdminVideosPopular = pinnedAdminVideosLatest; // same pinned set
+    pinnedAdminVideosPopular.sort((a, b) => b.likes.length - a.likes.length);
+
+    let nonPinnedVideosPopular = nonPinnedVideosLatest; // same non pinned set
+    nonPinnedVideosPopular.sort((a, b) => b.likes.length - a.likes.length);
+
+    let finalPopular = [...pinnedAdminVideosPopular, ...nonPinnedVideosPopular].slice(0, 5);
+
+    // Build HTML for Latest
     let latestHtml = `
       <h3 class="mb-3">Latest Videos</h3>
       <div class="row">
     `;
-    latestVideos.forEach(video => {
-      // If video.thumbnail is still default, we skip showing the image
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+    finalLatest.forEach(video => {
+      // If video.thumbnail is default, skip showing the image
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
 
       latestHtml += `
@@ -331,7 +359,7 @@ app.get('/', async (req, res) => {
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <span class="category-badge">${video.category}</span>
+            <p class="text-muted"><small>Category: ${video.category}</small></p>
             <a href="/video/${video._id}" class="btn btn-primary btn-block mt-2">Watch</a>
           </div>
         </div>
@@ -340,16 +368,18 @@ app.get('/', async (req, res) => {
     });
     latestHtml += '</div>';
 
+    // Build HTML for Popular
     let popularHtml = `
       <h3 class="mt-4 mb-3">Popular Videos</h3>
       <div class="row">
     `;
-    popularVideos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+    finalPopular.forEach(video => {
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
 
       popularHtml += `
@@ -382,11 +412,12 @@ app.get('/music', async (req, res) => {
     let videos = await Video.find({ category: 'Music' });
     let videoHtml = '<h2>Music Videos</h2><div class="row">';
     videos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
       videoHtml += `
         <div class="col-md-4 mb-3">
@@ -413,11 +444,12 @@ app.get('/gaming', async (req, res) => {
     let videos = await Video.find({ category: 'Gaming' });
     let videoHtml = '<h2>Gaming Videos</h2><div class="row">';
     videos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
       videoHtml += `
         <div class="col-md-4 mb-3">
@@ -444,11 +476,12 @@ app.get('/news', async (req, res) => {
     let videos = await Video.find({ category: 'News' });
     let videoHtml = '<h2>News Videos</h2><div class="row">';
     videos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
       videoHtml += `
         <div class="col-md-4 mb-3">
@@ -475,11 +508,12 @@ app.get('/general', async (req, res) => {
     let videos = await Video.find({ category: 'General' });
     let videoHtml = '<h2>General Videos</h2><div class="row">';
     videos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+      let showThumbnail = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbnailTag = showThumbnail
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
-                class="card-img-top video-thumbnail"
-                data-video="${video.filePath}"
-                style="max-height:200px; object-fit:cover;">`
+               class="card-img-top video-thumbnail"
+               data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">`
         : '';
       videoHtml += `
         <div class="col-md-4 mb-3">
@@ -757,8 +791,8 @@ app.get('/video/:id', async (req, res) => {
 
     let suggestedHtml = '';
     suggested.forEach(sv => {
-      // If no custom thumbnail, skip image
-      let thumbTag = (sv.thumbnail && !sv.thumbnail.endsWith('default.png'))
+      let showThumb = sv.thumbnail && !sv.thumbnail.endsWith('default.png');
+      let thumbTag = showThumb
         ? `<img src="${sv.thumbnail}" alt="Thumbnail"
                  class="video-thumbnail"
                  data-video="${sv.filePath}"
@@ -787,11 +821,9 @@ app.get('/video/:id', async (req, res) => {
     }
 
     // Download button
-    let downloadButton = `
-      <a href="/download/${video._id}" class="btn btn-secondary">Download</a>
-    `;
+    let downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary">Download</a>`;
 
-    // Like/Dislike, Edit/Delete, Comment
+    // Like/Dislike, Edit/Delete, Comment, Share
     let likeBtn = '';
     let dislikeBtn = '';
     let editDelete = '';
@@ -1041,7 +1073,8 @@ app.get('/profile/:id', async (req, res) => {
     // Build videos section
     let videosHtml = '<div class="row">';
     videos.forEach(video => {
-      let thumbnailTag = (video.thumbnail && !video.thumbnail.endsWith('default.png'))
+      let showThumb = video.thumbnail && !video.thumbnail.endsWith('default.png');
+      let thumbTag = showThumb
         ? `<img src="${video.thumbnail}" alt="Thumbnail"
                  class="card-img-top video-thumbnail"
                  data-video="${video.filePath}"
@@ -1050,7 +1083,7 @@ app.get('/profile/:id', async (req, res) => {
       videosHtml += `
         <div class="col-md-4 mb-3">
           <div class="card video-card">
-            ${thumbnailTag}
+            ${thumbTag}
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
@@ -1062,10 +1095,11 @@ app.get('/profile/:id', async (req, res) => {
     });
     videosHtml += '</div>';
 
-    // If profilePic is default, show a placeholder user icon
-    let profilePicTag = userProfile.profilePic && !userProfile.profilePic.endsWith('default.png')
+    // If profilePic is default, show nothing
+    let showProfilePic = userProfile.profilePic && !userProfile.profilePic.endsWith('default.png');
+    let profilePicTag = showProfilePic
       ? `<img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">`
-      : `<img src="https://via.placeholder.com/150?text=No+Profile" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">`;
+      : '';
 
     let liveSection = '';
     if (userProfile.isLive) {
@@ -1090,7 +1124,6 @@ app.get('/profile/:id', async (req, res) => {
     ${videosHtml}
     `;
 
-    // If this is the owner, show nothing extra here because we have an Account Settings page
     res.send(renderPage(profileHtml, req));
   } catch (err) {
     console.error('Profile error:', err);
@@ -1158,13 +1191,13 @@ app.get('/accountSettings', isAuthenticated, async (req, res) => {
   }
 });
 
-// Just an info page about verifying email
+// Info page about verifying email
 app.get('/verifyEmailHelp', isAuthenticated, (req, res) => {
   const msg = `
     <h2>Email Verification Help</h2>
     <p>We do not currently send real emails. Your <strong>verifyToken</strong> was generated on sign up. 
     You can visit <code>/verifyEmail?token=YOURTOKEN</code> to verify your email. 
-    <br>If you lost it, click below to regenerate a new token (then you'd theoretically get an email in a real system).</p>
+    <br>If you lost it, click below to regenerate a new token (in a real system, this would be emailed to you).</p>
     <form method="POST" action="/resendVerification">
       <button type="submit" class="btn btn-warning">Resend Verification Token</button>
     </form>
@@ -1218,7 +1251,6 @@ app.post('/generateStreamKey', isAuthenticated, async (req, res) => {
 });
 
 // ========== LIVE STREAM ACTIONS ==========
-// Save the user's liveLink
 app.post('/setLiveLink', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1231,7 +1263,6 @@ app.post('/setLiveLink', isAuthenticated, async (req, res) => {
   }
 });
 
-// Go Live
 app.post('/goLive', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1244,7 +1275,6 @@ app.post('/goLive', isAuthenticated, async (req, res) => {
   }
 });
 
-// Stop Live
 app.post('/stopLive', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
