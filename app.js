@@ -140,10 +140,10 @@ function renderPage(content, req) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
+            --primary: #e2e8f0;
+            --primary-hover: #e2e8f0;
             --dark: #1e293b;
-            --light: #f8fafc;
+            --light: #e2e8f0;
         }
 
         body {
@@ -266,7 +266,7 @@ function renderPage(content, req) {
 }
 
         .nav-link:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: #e2e8f0;
   transform: translateY(-2px);
 }
     </style>
