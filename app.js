@@ -313,9 +313,9 @@ function renderPage(content, req) {
     </main>
 
     <footer class="text-center">
-        <div class="container">
-            <p class="mb-0">By Villamor Gelera</p>
-              color: rgba(255, 255, 255, 0.6);
+          color: rgba(255, 255, 255, 0.6);
+    <div class="container">
+          <p class="mb-0">By Villamor Gelera</p>
             <div class="mt-2">
                 <!-- Add social icons if needed -->
             </div>
