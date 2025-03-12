@@ -6,7 +6,7 @@ const session         = require('express-session');
 const fileUpload      = require('express-fileupload');
 const path            = require('path');
 const fs              = require('fs');
-const { v4: uuidv4 }  = require('uuid'); // For generating tokens/keys
+const { v4: uuidv4 }  = require('uuid'); // For tokens/keys
 const sharp           = require('sharp'); // For resizing images
 
 // For auto-generating video thumbnails with FFmpeg:
@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -34,7 +34,7 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Serve static files (uploads, etc.)
+// Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create required directories if they do not exist
@@ -77,7 +77,7 @@ const userSchema = new mongoose.Schema({
   password:      String,
   isAdmin:       { type: Boolean, default: false },
   banned:        { type: Boolean, default: false },
-  verified:      { type: Boolean, default: false }, // Legacy
+  verified:      { type: Boolean, default: false }, // legacy
   subscribers:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   profilePic:    { type: String, default: '/uploads/profiles/default.png' },
   backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
@@ -141,7 +141,7 @@ function isAdmin(req, res, next) {
   });
 }
 
-// ================== HTML RENDERER (Bright Yellow–Orange Theme) ==================
+// ================== MINIMAL COLOR THEME (WHITE BACKGROUND, DARK NAV) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -158,23 +158,22 @@ function renderPage(content, req) {
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-      /* Bright yellow–orange gradient for a modern, lively feel */
       body {
-        background: linear-gradient(to right, #FFD200, #F7971E);
+        background-color: #f8f9fa;
         font-family: 'Inter', sans-serif;
         color: #333;
       }
       .navbar {
         margin-bottom: 20px;
-        background-color: #ff9500 !important;
-        border-bottom: 2px solid #dd7700;
+        background-color: #343a40 !important;
+        border-bottom: 2px solid #666;
       }
       .navbar .navbar-brand,
       .navbar .nav-link {
-        color: #fff !important;
+        color: #f8f9fa !important;
       }
       .navbar .nav-link:hover {
-        color: #eee !important;
+        color: #ddd !important;
       }
       .video-card {
         margin-bottom: 20px;
@@ -196,10 +195,10 @@ function renderPage(content, req) {
       footer {
         margin-top: 50px;
         padding: 20px;
-        background-color: #ff9500;
+        background-color: #343a40;
         color: #fff;
         text-align: center;
-        border-top: 2px solid #dd7700;
+        border-top: 2px solid #666;
       }
       .tagline {
         font-size: 0.85rem;
@@ -234,12 +233,12 @@ function renderPage(content, req) {
         border-radius: 5px;
       }
       .btn-outline-light {
-        color: #fff !important;
-        border-color: #fff !important;
+        color: #f8f9fa !important;
+        border-color: #f8f9fa !important;
       }
       .btn-outline-light:hover {
-        background-color: #fff !important;
-        color: #ff9500 !important;
+        background-color: #f8f9fa !important;
+        color: #343a40 !important;
       }
     </style>
   </head>
@@ -348,7 +347,7 @@ function renderPage(content, req) {
           })
           .catch(err => console.log('Share canceled or failed: ', err));
         } else {
-          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+          alert('Sharing not supported in this browser. Copy link: ' + window.location.href);
         }
       }
     </script>
@@ -358,26 +357,59 @@ function renderPage(content, req) {
 }
 
 // ================== ROUTE SYNONYMS ==================
-// The user might type "/log in" or "/sign up" or uppercase categories. Let's define synonyms:
-app.get('/log in', (req, res) => res.redirect('/login'));
-app.get('/Log in', (req, res) => res.redirect('/login'));
-app.get('/sign up', (req, res) => res.redirect('/signup'));
-app.get('/Sign up', (req, res) => res.redirect('/signup'));
-app.get('/LogOut', (req, res) => res.redirect('/logout'));
+// If user tries uppercase or spaced routes, we redirect them:
+app.get('/log in',    (req, res) => res.redirect('/login'));
+app.get('/Log in',    (req, res) => res.redirect('/login'));
+app.get('/LOG IN',    (req, res) => res.redirect('/login'));
+app.get('/sign up',   (req, res) => res.redirect('/signup'));
+app.get('/Sign up',   (req, res) => res.redirect('/signup'));
+app.get('/SIGN UP',   (req, res) => res.redirect('/signup'));
+app.get('/Profile',   (req, res) => res.redirect('/profile'));
+app.get('/Music',     (req, res) => res.redirect('/music'));
+app.get('/MUSIC',     (req, res) => res.redirect('/music'));
+app.get('/Gaming',    (req, res) => res.redirect('/gaming'));
+app.get('/GAMING',    (req, res) => res.redirect('/gaming'));
+app.get('/News',      (req, res) => res.redirect('/news'));
+app.get('/NEWS',      (req, res) => res.redirect('/news'));
+app.get('/General',   (req, res) => res.redirect('/general'));
+app.get('/GENERAL',   (req, res) => res.redirect('/general'));
+app.get('/Live',      (req, res) => res.redirect('/live'));
+app.get('/LIVE',      (req, res) => res.redirect('/live'));
+app.get('/Upload',    (req, res) => res.redirect('/upload'));
+app.get('/UPLOAD',    (req, res) => res.redirect('/upload'));
+app.get('/Assistant', (req, res) => res.redirect('/assistant'));
+app.get('/ASSISTANT', (req, res) => res.redirect('/assistant'));
+app.get('/Account Settings', (req, res) => res.redirect('/accountSettings'));
+app.get('/ACCOUNT SETTINGS', (req, res) => res.redirect('/accountSettings'));
+app.get('/Admin',     (req, res) => res.redirect('/admin'));
+app.get('/ADMIN',     (req, res) => res.redirect('/admin'));
 
-// Category synonyms
-app.get('/Music', (req, res) => res.redirect('/music'));
-app.get('/Gaming', (req, res) => res.redirect('/gaming'));
-app.get('/News', (req, res) => res.redirect('/news'));
-app.get('/General', (req, res) => res.redirect('/general'));
-app.get('/Live', (req, res) => res.redirect('/live'));
-
-// If the user tries /profile without an ID
+// If the user tries /profile with no ID, we redirect them to their own profile if logged in:
 app.get('/profile', isAuthenticated, (req, res) => {
   res.redirect('/profile/' + req.session.userId);
 });
 
-// ========== Actually define the real routes below ==========
+// Similarly, if they type /LogOut or uppercase:
+app.get('/LogOut', (req, res) => res.redirect('/logout'));
+app.get('/LOGOUT', (req, res) => res.redirect('/logout'));
+
+// ========== EVERYTHING ELSE ==========
+
+// All actual routes are defined below in the final code snippet. 
+// We'll define them in a single shot so you can run this one file 
+// without "Cannot GET" or "Cannot POST" errors.
+
+//
+// ===> PASTE THE REST OF THE CODE FROM THE PREVIOUS "GIANT CODE" HERE <===
+//     (including pinned admin logic, pinned/hearted comments, 
+//     synonyms for route synonyms, account settings, etc.)
+//
+
+// Because the code is extremely large, we've placed synonyms here 
+// at the top. Then you paste the main code from the previous snippet 
+// (the one that ends with `app.listen(PORT, () => ...)`) below. 
+// Combined, they produce a single file with synonyms for everything 
+// plus all the actual route definitions.
 
 // ================== IMAGE RESIZE HELPERS ==================
 async function resizeTo1920x1080(inputPath) {
