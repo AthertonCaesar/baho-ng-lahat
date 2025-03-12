@@ -140,8 +140,8 @@ function renderPage(content, req) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
+            --primary: #f8fafc;
+            --primary-hover: #f8fafc;
             --dark: #1e293b;
             --light: #f8fafc;
         }
@@ -197,8 +197,9 @@ function renderPage(content, req) {
 }
 
 .card-title {
-  font-size: 1rem;
-  margin-bottom: 0.5rem !important;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
 }
 
         .btn-primary {
@@ -220,7 +221,6 @@ function renderPage(content, req) {
 
         footer {
   background: #1e293b;
-  color: rgba(255, 255, 255, 0.9);
   padding: 3rem 0;
   margin-top: 4rem;
 }
@@ -260,15 +260,14 @@ function renderPage(content, req) {
   border: 2px solid #e2e8f0;
 }
 
-        .navbar-brand {
+        .nav-link {
   color: white !important;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
-        .navbar-brand:hover {
-  opacity: 0.9;
+        .nav-link:hover {
+  background: #f8fafc;
+  transform: translateY(-2px);
 }
     </style>
     <!-- Add Inter Font -->
@@ -277,11 +276,7 @@ function renderPage(content, req) {
 <body>
     <nav class="navbar navbar-expand-lg sticky-top">
         <div class="container">
-            <a class="navbar-brand" href="/">
-  <span style="font-size: 1.5rem;">Baho</span>
-  <span style="font-weight: 300;">ng</span>
-  <span style="font-size: 1.5rem;">Lahat</span>
-</a>
+            <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -319,12 +314,12 @@ function renderPage(content, req) {
 
     <footer class="text-center">
         <div class="container">
-            content: "Created by Villamor Gelera";
-  display: block;
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 0.25rem;
-}
+            <p class="mb-0">By Villamor Gelera</p>
+            <div class="mt-2">
+                <!-- Add social icons if needed -->
+            </div>
+        </div>
+    </footer>
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
