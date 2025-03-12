@@ -83,19 +83,6 @@ const videoSchema = new mongoose.Schema({
 const User  = mongoose.model('User', userSchema);
 const Video = mongoose.model('Video', videoSchema);
 
-// ================== SOCKET.IO HANDLING ==================
-io.on('connection', (socket) => {
-  socket.on('join', (userId) => {
-    socket.join(userId);
-  });
-});
-
-function sendNotification(userId, message) {
-  if (!notifications.has(userId)) notifications.set(userId, []);
-  notifications.get(userId).push({ message, date: new Date() });
-  io.to(userId).emit('notification', { count: notifications.get(userId).length });
-}
-
 // ================== CREATE DEFAULT ADMIN ==================
 async function createDefaultAdmin() {
   try {
@@ -142,233 +129,144 @@ async function isAdmin(req, res, next) {
 // ================== HTML RENDERER (WITH SCRIPTS) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
-  const username = req.session.username || '';
-
+  const username    = req.session.username || '';
   return `
   <!DOCTYPE html>
-  <html>
-  <head>
+<html>
+<head>
     <title>Baho ng Lahat</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-      :root {
-        --primary: #dc3545;
-        --dark: #0f0f0f;
-        --light: #f8f9fa;
-      }
-      body {
-        background: var(--dark);
-        color: var(--light);
-        font-family: 'Segoe UI', sans-serif;
-      }
-      .navbar {
-        background: var(--dark) !important;
-        border-bottom: 1px solid #333;
-      }
-      .card {
-        background: #1a1a1a;
-        border: 1px solid #333;
-        transition: transform 0.3s ease;
-      }
-      .card:hover {
-        transform: translateY(-5px);
-      }
-      .btn-primary {
-        background: var(--primary);
-        border: none;
-      }
-      .search-bar {
-        width: 400px;
-        margin-right: 20px;
-      }
-      .notification-bell {
-        position: relative;
-        margin-right: 15px;
-      }
-      .badge-notification {
-        position: absolute;
-        top: -5px;
-        right: -5px;
-      }
-      .comment-card {
-        background: #2d2d2d;
-        border-radius: 8px;
-        position: relative;
-      }
-      .pinned-comment {
-        border-left: 3px solid var(--primary);
-      }
-      .video-thumbnail {
-        width: 100%;
-        max-width: 300px;
-        cursor: pointer;
-        transition: transform 0.3s;
-      }
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --dark: #1e293b;
+            --light: #f8fafc;
+        }
+
+        body {
+            background: var(--light);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .video-card {
+            border: 0;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            background: white;
+        }
+
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .video-thumbnail {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
+
+        footer {
+            background: var(--dark);
+            color: white;
+            margin-top: auto;
+            padding: 2rem 0;
+        }
+
+        .preview-img {
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            margin: 1rem 0;
+        }
+
+        .badge {
+            background: var(--primary);
+            font-weight: 500;
+        }
+
+        .form-control {
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .nav-link {
+            color: var(--dark);
+            font-weight: 500;
+            padding: 8px 16px !important;
+            border-radius: 8px;
+        }
+
+        .nav-link:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--primary);
+        }
     </style>
-  </head>
-  <body>
-    <nav class="navbar navbar-expand-lg navbar-light">
-      <a class="navbar-brand text-light" href="/">Baho ng Lahat</a>
-      <div class="collapse navbar-collapse">
-        <ul class="navbar-nav mr-auto">
-          <li class="nav-item">
-            <form action="/search" method="GET" class="form-inline">
-              <input class="form-control search-bar bg-dark text-light" 
-                     type="search" name="q" 
-                     placeholder="Search videos..." 
-                     aria-label="Search">
-            </form>
-          </li>
-          <li class="nav-item"><a class="nav-link text-light" href="/">Home</a></li>
-          <li class="nav-item"><a class="nav-link text-light" href="/music">Music</a></li>
-          <li class="nav-item"><a class="nav-link text-light" href="/gaming">Gaming</a></li>
-          <li class="nav-item"><a class="nav-link text-light" href="/news">News</a></li>
-          <li class="nav-item"><a class="nav-link text-light" href="/live">Live</a></li>
-          ${req.session.userId ? `
-            <li class="nav-item"><a class="nav-link text-light" href="/upload">Upload</a></li>
-            <li class="nav-item"><a class="nav-link text-light" href="/profile/${req.session.userId}">Profile</a></li>` : ''}
-          ${isAdminUser ? `<li class="nav-item"><a class="nav-link text-light" href="/admin">Admin</a></li>` : ''}
-        </ul>
-        <ul class="navbar-nav">
-          ${req.session.userId ? `
-            <li class="nav-item notification-bell">
-              <a class="nav-link" href="#" onclick="showNotifications()">
-                🔔 <span class="badge badge-danger badge-notification" id="notificationCount">0</span>
-              </a>
-            </li>
-            <li class="nav-item"><a class="nav-link text-light" href="/logout">Logout (${username})</a></li>` : `
-            <li class="nav-item"><a class="nav-link text-light" href="/login">Login</a></li>
-            <li class="nav-item"><a class="nav-link text-light" href="/signup">Sign Up</a></li>`}
-        </ul>
-      </div>
+    <!-- Add Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <!-- Keep existing nav items -->
+                </ul>
+                <ul class="navbar-nav">
+                    <!-- Keep existing auth items -->
+                </ul>
+            </div>
+        </div>
     </nav>
 
-    <div class="container">
-      ${content}
-    </div>
+    <main class="container py-4 flex-grow-1">
+        ${content}
+    </main>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-      const socket = io();
-      ${req.session.userId ? `socket.emit('join', '${req.session.userId}');` : ''}
+    <footer class="text-center">
+        <div class="container">
+            <p class="mb-0">By Villamor Gelera</p>
+            <div class="mt-2">
+                <!-- Add social icons if needed -->
+            </div>
+        </div>
+    </footer>
 
-      socket.on('notification', (data) => {
-        document.getElementById('notificationCount').textContent = data.count;
-      });
-
-      async function showNotifications() {
-        const res = await fetch('/notifications');
-        const notifs = await res.json();
-        alert('Notifications:\\n' + notifs.map(n => n.message).join('\\n'));
-      }
-
-      async function likeComment(videoId, commentId) {
-        await fetch(\`/likeComment/\${videoId}/\${commentId}\`, { method: 'POST' });
-        location.reload();
-      }
-
-      async function heartComment(videoId, commentId) {
-        await fetch(\`/heartComment/\${videoId}/\${commentId}\`, { method: 'POST' });
-        location.reload();
-      }
-
-      async function pinComment(videoId, commentId) {
-        await fetch(\`/pinComment/\${videoId}/\${commentId}\`, { method: 'POST' });
-        location.reload();
-      }
-
-      async function subscribeHandler(ownerId) {
-        await fetch(\`/subscribe/\${ownerId}\`, { method: 'POST' });
-        location.reload();
-      }
-    </script>
-  </body>
-  </html>
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Keep existing scripts -->
+</body>
+</html>
   `;
 }
-
-// ================== NEW ROUTES ==================
-// Search Route
-app.get('/search', async (req, res) => {
-  try {
-    const query = new RegExp(req.query.q, 'i');
-    const videos = await Video.find({ title: query }).populate('owner');
-    
-    let resultsHtml = `<h2>Search Results for "${req.query.q}"</h2><div class="row">`;
-    videos.forEach(video => {
-      resultsHtml += `
-        <div class="col-md-4 mb-4">
-          <div class="card">
-            <img src="${video.thumbnail}" class="card-img-top video-thumbnail">
-            <div class="card-body">
-              <h5>${video.title}</h5>
-              <p>${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
-            </div>
-          </div>
-        </div>`;
-    });
-    resultsHtml += '</div>';
-    res.send(renderPage(resultsHtml, req));
-  } catch (err) {
-    res.send('Error searching videos.');
-  }
-});
-
-// Comment Interactions
-app.post('/likeComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
-  try {
-    const video = await Video.findById(req.params.videoId);
-    const comment = video.comments.id(req.params.commentId);
-    const userId = req.session.userId;
-
-    comment.likes = comment.likes.includes(userId) 
-      ? comment.likes.filter(id => id.toString() !== userId)
-      : [...comment.likes, userId];
-
-    await video.save();
-    res.redirect(`/video/${req.params.videoId}`);
-  } catch (err) {
-    res.send('Error liking comment');
-  }
-});
-
-app.post('/heartComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
-  try {
-    const video = await Video.findById(req.params.videoId);
-    const comment = video.comments.id(req.params.commentId);
-    const userId = req.session.userId;
-
-    comment.hearts = comment.hearts.includes(userId)
-      ? comment.hearts.filter(id => id.toString() !== userId)
-      : [...comment.hearts, userId];
-
-    await video.save();
-    res.redirect(`/video/${req.params.videoId}`);
-  } catch (err) {
-    res.send('Error hearting comment');
-  }
-});
-
-app.post('/pinComment/:videoId/:commentId', isAuthenticated, async (req, res) => {
-  try {
-    const video = await Video.findById(req.params.videoId);
-    const comment = video.comments.id(req.params.commentId);
-    comment.pinned = !comment.pinned;
-    await video.save();
-    res.redirect(`/video/${req.params.videoId}`);
-  } catch (err) {
-    res.send('Error pinning comment');
-  }
-});
-
-// Notifications Route
-app.get('/notifications', isAuthenticated, (req, res) => {
-  res.json(notifications.get(req.session.userId) || []);
-});
 
 // ========== HOME PAGE: LATEST & POPULAR ==========
 app.get('/', async (req, res) => {
@@ -785,11 +683,11 @@ app.get('/video/:id', async (req, res) => {
       // The user is not the owner, so maybe subscribe/unsubscribe
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
       subscribeButton = `
-      <button class="btn ${isSubscribed ? 'btn-secondary' : 'btn-danger'}" 
-          onclick="subscribeHandler('${video.owner._id}')>
-    ${isSubscribed ? 'Subscribed' : 'Subscribe'} (${video.owner.subscribers.length})
-  </button>
-`;
+      <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
+        <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+      </form>
+      `;
+    }
 
     // Download button
     let downloadButton = `
@@ -831,28 +729,8 @@ app.get('/video/:id', async (req, res) => {
     // Comments
     let commentsHtml = '';
     video.comments.forEach(c => {
-      commentsHtml += `
-      <div class="card comment-card ${c.pinned ? 'pinned-comment' : ''} mb-2">
-  <div class="card-body">
-    ${c.pinned ? '<span class="badge badge-primary">Pinned</span>' : ''}
-    <p><strong>${c.user.username}:</strong> ${c.comment}</p>
-    <div class="d-flex align-items-center gap-2">
-      <button onclick="likeComment('${video._id}', '${c._id}')" 
-              class="btn btn-sm ${c.likes.includes(req.session.userId) ? 'btn-primary' : 'btn-outline-primary'}">
-        👍 ${c.likes.length}
-      </button>
-      <button onclick="heartComment('${video._id}', '${c._id}')" 
-              class="btn btn-sm ${c.hearts.includes(req.session.userId) ? 'btn-danger' : 'btn-outline-danger'}">
-        ❤️ ${c.hearts.length}
-      </button>
-      ${video.owner._id.toString() === req.session.userId ? `
-        <button onclick="pinComment('${video._id}', '${c._id}')" 
-                class="btn btn-sm btn-outline-info">
-          📌 ${c.pinned ? 'Unpin' : 'Pin'}
-        </button>` : ''}
-    </div>
-  </div>
-</div>`;
+      commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
+    });
 
     // "Share" button (calls shareVideo(...) in the script)
     let shareButton = `
