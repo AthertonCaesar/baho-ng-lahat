@@ -247,6 +247,7 @@ function renderPage(content, req) {
               box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
               margin: 1rem 0;
               max-width: 100%;
+              transition: opacity 0.5s ease;
           }
           #backToTop {
               position: fixed;
@@ -272,6 +273,13 @@ function renderPage(content, req) {
           @keyframes fadein {
               from { opacity: 0; }
               to { opacity: 1; }
+          }
+          /* Button animation */
+          .button-animation {
+              transition: transform 0.3s ease;
+          }
+          .button-animation:hover {
+              transform: scale(1.05);
           }
           /* Responsive adjustments */
           @media (max-width: 767.98px) {
@@ -301,16 +309,19 @@ function renderPage(content, req) {
               <div class="d-flex align-items-center">
                   <form class="d-flex me-2" action="/search" method="GET">
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
-                      <button class="btn btn-outline-success ms-2" type="submit">Search</button>
+                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
                   </form>
-                  <button class="btn btn-secondary me-2" id="darkModeToggle">Toggle Dark Mode</button>
+                  <button class="btn btn-secondary me-2 button-animation" id="darkModeToggle">Toggle Dark Mode</button>
                   ${
                     req.session.userId
-                    ? `<a href="/profile/${req.session.userId}" class="nav-link">
-                           <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
-                       </a>`
-                    : `<a class="nav-link" href="/login">Login</a>
-                       <a class="nav-link" href="/signup">Sign Up</a>`
+                    ? `<div class="d-flex align-items-center">
+                           <a href="/profile/${req.session.userId}" class="nav-link me-2">
+                               <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
+                           </a>
+                           <a class="nav-link button-animation" href="/logout">Logout</a>
+                       </div>`
+                    : `<a class="nav-link button-animation" href="/login">Login</a>
+                       <a class="nav-link button-animation" href="/signup">Sign Up</a>`
                   }
               </div>
           </div>
@@ -324,18 +335,18 @@ function renderPage(content, req) {
               <nav id="sidebar" class="col-md-2 d-none d-md-block sidebar">
                   <div class="position-sticky">
                       <ul class="nav flex-column">
-                          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/">Home</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/music">Music</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/gaming">Gaming</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/news">News</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/general">General</a></li>
                           ${
                             req.session.userId
-                            ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                               <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
+                            ? `<li class="nav-item"><a class="nav-link button-animation" href="/upload">Upload Video</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>`
                             : ''
                           }
-                          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
+                          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link button-animation" href="/admin">Admin Panel</a></li>` : '' }
                       </ul>
                   </div>
               </nav>
@@ -350,14 +361,14 @@ function renderPage(content, req) {
           <div class="container">
               <p class="mb-0">By Villamor Gelera</p>
               <div class="mt-2">
-                  <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
-                  <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
-                  <a href="#"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
+                  <a href="#" class="me-2 button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
+                  <a href="#" class="me-2 button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
+                  <a href="#" class="button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
               </div>
           </div>
       </footer>
   
-      <button id="backToTop" class="btn btn-primary">Top</button>
+      <button id="backToTop" class="btn btn-primary button-animation">Top</button>
   
       <!-- Bootstrap 5 JS -->
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -390,21 +401,27 @@ function renderPage(content, req) {
           });
         });
   
-        // Preview images before uploading
+        // Preview images before uploading with fade-in effect:
         function setupPreview(inputId, previewId) {
           const inputEl = document.getElementById(inputId);
           const previewEl = document.getElementById(previewId);
           if (!inputEl || !previewEl) return;
+          // Hide preview initially
+          previewEl.style.display = 'none';
           inputEl.addEventListener('change', function() {
             const file = this.files[0];
             if (file) {
               const reader = new FileReader();
               reader.onload = function(e) {
                 previewEl.src = e.target.result;
+                previewEl.style.opacity = 0;
+                previewEl.style.display = 'block';
+                setTimeout(() => { previewEl.style.opacity = 1; }, 50);
               }
               reader.readAsDataURL(file);
             } else {
               previewEl.src = '';
+              previewEl.style.display = 'none';
             }
           });
         }
@@ -455,7 +472,6 @@ function renderPage(content, req) {
 }
 
 // ========== HOME PAGE: LATEST, POPULAR & TRENDING ==========
-// (Remaining routes are largely similar but with minor UI adjustments)
 // --- Home Route ---
 app.get('/', async (req, res) => {
   try {
@@ -476,7 +492,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Category: ${video.category}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
           </div>
         </div>
       </div>
@@ -496,7 +512,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
           </div>
         </div>
       </div>
@@ -516,7 +532,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Views: ${video.viewCount}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
           </div>
         </div>
       </div>
@@ -533,7 +549,6 @@ app.get('/', async (req, res) => {
 });
 
 // ========== SEARCH ROUTE ==========
-// (No major changes; similar improvements apply)
 app.get('/search', async (req, res) => {
   const q = req.query.query || '';
   try {
@@ -559,7 +574,7 @@ app.get('/search', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
             </div>
           </div>
         </div>
@@ -588,7 +603,7 @@ app.get('/music', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
             </div>
           </div>
         </div>
@@ -615,7 +630,7 @@ app.get('/gaming', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
             </div>
           </div>
         </div>
@@ -642,7 +657,7 @@ app.get('/news', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
             </div>
           </div>
         </div>
@@ -669,7 +684,7 @@ app.get('/general', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
             </div>
           </div>
         </div>
@@ -688,15 +703,15 @@ app.get('/signup', (req, res) => {
   const form = `
   <h2>Sign Up</h2>
   <form method="POST" action="/signup">
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Username:</label>
       <input type="text" name="username" class="form-control" required />
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Password:</label>
       <input type="password" name="password" class="form-control" required />
     </div>
-    <button type="submit" class="btn btn-primary">Sign Up</button>
+    <button type="submit" class="btn btn-primary button-animation">Sign Up</button>
   </form>
   `;
   res.send(renderPage(form, req));
@@ -720,15 +735,15 @@ app.get('/login', (req, res) => {
   const form = `
   <h2>Login</h2>
   <form method="POST" action="/login">
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Username:</label>
       <input type="text" name="username" class="form-control" required />
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Password:</label>
       <input type="password" name="password" class="form-control" required />
     </div>
-    <button type="submit" class="btn btn-primary">Login</button>
+    <button type="submit" class="btn btn-primary button-animation">Login</button>
   </form>
   `;
   res.send(renderPage(form, req));
@@ -765,15 +780,15 @@ app.get('/upload', isAuthenticated, (req, res) => {
   const form = `
   <h2>Upload Video</h2>
   <form method="POST" action="/upload" enctype="multipart/form-data">
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Title:</label>
       <input type="text" name="title" class="form-control" required />
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Description:</label>
       <textarea name="description" class="form-control" required></textarea>
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Category:</label>
       <select name="category" class="form-control">
         <option value="Music">Music</option>
@@ -782,16 +797,16 @@ app.get('/upload', isAuthenticated, (req, res) => {
         <option value="General" selected>General</option>
       </select>
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Video File:</label>
       <input type="file" name="videoFile" class="form-control-file" accept="video/*" required />
     </div>
-    <div class="form-group">
+    <div class="form-group mb-3">
       <label>Thumbnail (optional):</label>
       <input type="file" name="thumbnailFile" class="form-control-file" accept="image/*" id="thumbnailFileInput"/>
       <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
     </div>
-    <button type="submit" class="btn btn-primary">Upload</button>
+    <button type="submit" class="btn btn-primary button-animation">Upload</button>
   </form>
   `;
   res.send(renderPage(form, req));
@@ -862,7 +877,7 @@ app.get('/video/:id', async (req, res) => {
                class="video-thumbnail" data-video="${sv.filePath}"
                style="width:100%; max-height:100px; object-fit:cover;">
           <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
-          <a href="/video/${sv._id}" class="btn btn-sm btn-primary">Watch</a>
+          <a href="/video/${sv._id}" class="btn btn-sm btn-primary button-animation">Watch</a>
         </div>
       </div>
       `;
@@ -872,11 +887,11 @@ app.get('/video/:id', async (req, res) => {
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
       subscribeButton = `
       <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
-        <button class="btn btn-info">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+        <button class="btn btn-info button-animation me-2">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
       </form>
       `;
     }
-    let downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary">Download</a>`;
+    let downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary button-animation me-2">Download</a>`;
     let likeBtn = '';
     let dislikeBtn = '';
     let editDelete = '';
@@ -884,25 +899,25 @@ app.get('/video/:id', async (req, res) => {
     if (req.session.userId) {
       likeBtn = `
         <form method="POST" action="/like/${video._id}" style="display:inline;">
-          <button class="btn btn-success">Like (${video.likes.length})</button>
+          <button class="btn btn-success button-animation me-2">Like (${video.likes.length})</button>
         </form>`;
       dislikeBtn = `
         <form method="POST" action="/dislike/${video._id}" style="display:inline;">
-          <button class="btn btn-warning">Dislike (${video.dislikes.length})</button>
+          <button class="btn btn-warning button-animation me-2">Dislike (${video.dislikes.length})</button>
         </form>`;
       commentForm = `
         <form method="POST" action="/comment/${video._id}">
-          <div class="form-group">
+          <div class="form-group mb-3">
             <textarea name="comment" class="form-control" placeholder="Add a comment..." required></textarea>
           </div>
-          <button type="submit" class="btn btn-primary">Comment</button>
+          <button type="submit" class="btn btn-primary button-animation">Comment</button>
         </form>
       `;
       if (video.owner._id.toString() === req.session.userId) {
         editDelete = `
-          <a href="/edit/${video._id}" class="btn btn-secondary">Edit</a>
+          <a href="/edit/${video._id}" class="btn btn-secondary button-animation me-2">Edit</a>
           <form method="POST" action="/delete/${video._id}" style="display:inline;">
-            <button type="submit" class="btn btn-danger">Delete</button>
+            <button type="submit" class="btn btn-danger button-animation me-2">Delete</button>
           </form>
         `;
       }
@@ -911,7 +926,7 @@ app.get('/video/:id', async (req, res) => {
     video.comments.forEach(c => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
-    let shareButton = `<button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>`;
+    let shareButton = `<button class="btn btn-outline-primary button-animation me-2" onclick="shareVideo('${video.title}')">Share</button>`;
     let videoPage = `
       <div class="row">
         <div class="col-md-8">
@@ -1003,15 +1018,15 @@ app.get('/edit/:id', isAuthenticated, async (req, res) => {
     const form = `
     <h2>Edit Video</h2>
     <form method="POST" action="/edit/${video._id}" enctype="multipart/form-data">
-      <div class="form-group">
+      <div class="form-group mb-3">
         <label>Title:</label>
         <input type="text" name="title" class="form-control" value="${video.title}" required />
       </div>
-      <div class="form-group">
+      <div class="form-group mb-3">
         <label>Description:</label>
         <textarea name="description" class="form-control" required>${video.description}</textarea>
       </div>
-      <div class="form-group">
+      <div class="form-group mb-3">
         <label>Category:</label>
         <select name="category" class="form-control">
           <option value="Music" ${video.category === 'Music' ? 'selected' : ''}>Music</option>
@@ -1020,12 +1035,12 @@ app.get('/edit/:id', isAuthenticated, async (req, res) => {
           <option value="General" ${video.category === 'General' ? 'selected' : ''}>General</option>
         </select>
       </div>
-      <div class="form-group">
+      <div class="form-group mb-3">
         <label>Change Thumbnail (optional):</label>
         <input type="file" name="thumbnailFile" class="form-control-file" accept="image/*" id="thumbnailFileInput" />
         <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
       </div>
-      <button type="submit" class="btn btn-primary">Update</button>
+      <button type="submit" class="btn btn-primary button-animation">Update</button>
     </form>
     `;
     res.send(renderPage(form, req));
@@ -1104,7 +1119,7 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   }
 });
 
-// ========== USER PROFILE ========== 
+// ========== USER PROFILE ==========
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
@@ -1121,7 +1136,7 @@ app.get('/profile/:id', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary">Watch Video</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch Video</a>
             </div>
           </div>
         </div>
@@ -1130,38 +1145,44 @@ app.get('/profile/:id', async (req, res) => {
     videosHtml += '</div>';
 
     let profileHtml = `
-    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge">Verified</span>' : ''}</h2>
+    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
     <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover; border-radius:50%;">
     <p>${userProfile.about}</p>
     <p>Subscribers: ${userProfile.subscribers.length}</p>
-    <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
-    ${videosHtml}
     `;
+    // If the logged in user is not viewing their own profile, add a subscribe button
+    if(req.session.userId && req.session.userId !== req.params.id) {
+      let isSubscribed = userProfile.subscribers.includes(req.session.userId);
+      profileHtml += `
+      <form method="POST" action="/subscribe/${userProfile._id}" style="display:inline;">
+        <button class="btn btn-info button-animation me-2">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+      </form>
+      `;
+    }
+    profileHtml += `<h4 class="mt-4">Videos by ${userProfile.username}:</h4>
+                    ${videosHtml}`;
 
+    // Only show profile update form if the user is viewing their own profile
     if(req.session.userId && req.session.userId === req.params.id) {
       profileHtml += `
       <hr>
       <h3>Update Profile</h3>
       <form method="POST" action="/updateProfile" enctype="multipart/form-data">
-        <div class="form-group">
+        <div class="form-group mb-3">
           <label>Profile Picture:</label>
           <input type="file" name="profilePic" accept="image/*" class="form-control-file" id="profilePicInput" />
           <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
         </div>
-        <div class="form-group">
-          <label>Background Picture:</label>
-          <input type="file" name="backgroundPic" accept="image/*" class="form-control-file" id="backgroundPicInput" />
-          <img id="backgroundPicPreview" class="preview-img" alt="Background Pic Preview" />
-        </div>
-        <div class="form-group">
+        <!-- Background Picture removed as per request -->
+        <div class="form-group mb-3">
           <label>About Me:</label>
           <textarea name="about" class="form-control">${userProfile.about}</textarea>
         </div>
-        <div class="form-group">
+        <div class="form-group mb-3">
           <label>Stream Key (for streaming):</label>
           <input type="text" name="streamKey" class="form-control" value="${userProfile.streamKey}" placeholder="Enter your stream key here" />
         </div>
-        <button type="submit" class="btn btn-primary">Update Profile</button>
+        <button type="submit" class="btn btn-primary button-animation">Update Profile</button>
       </form>
       `;
     }
@@ -1186,14 +1207,7 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
       user.profilePic = picResult.secure_url;
       req.session.profilePic = picResult.secure_url;
     }
-    if(req.files && req.files.backgroundPic) {
-      let bg = req.files.backgroundPic;
-      let bgResult = await cloudinary.uploader.upload(bg.tempFilePath, {
-        resource_type: 'image',
-        folder: 'backgrounds'
-      });
-      user.backgroundPic = bgResult.secure_url;
-    }
+    // Background picture update removed as per request
     user.about = req.body.about;
     user.streamKey = req.body.streamKey || '';
     await user.save();
@@ -1217,17 +1231,17 @@ app.get('/admin', isAdmin, async (req, res) => {
              ${
                user._id.toString() !== req.session.userId
                  ? `<form style="display:inline;" method="POST" action="/ban/${user._id}">
-                      <button class="btn btn-danger btn-sm ml-2">Ban/Unban</button>
+                      <button class="btn btn-danger btn-sm button-animation me-2">Ban/Unban</button>
                     </form>
                     <form style="display:inline;" method="POST" action="/admin/delete/user/${user._id}">
-                      <button class="btn btn-danger btn-sm ml-2">Delete Account</button>
+                      <button class="btn btn-danger btn-sm button-animation me-2">Delete Account</button>
                     </form>`
                  : ''
              }
              ${
                !user.verified
                  ? `<form style="display:inline;" method="POST" action="/verify/${user._id}">
-                      <button class="btn btn-info btn-sm ml-2">Verify</button>
+                      <button class="btn btn-info btn-sm button-animation me-2">Verify</button>
                     </form>`
                  : ''
              }
@@ -1244,7 +1258,7 @@ app.get('/admin', isAdmin, async (req, res) => {
         <div class="card-body">
           <p>${video.title} by ${video.owner.username}
              <form style="display:inline;" method="POST" action="/admin/delete/video/${video._id}">
-                <button class="btn btn-danger btn-sm ml-2">Delete Video</button>
+                <button class="btn btn-danger btn-sm button-animation me-2">Delete Video</button>
              </form>
           </p>
         </div>
