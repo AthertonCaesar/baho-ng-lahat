@@ -137,7 +137,6 @@ async function isAdmin(req, res, next) {
 }
 
 // ================== AUTO-LINK FUNCTION ==================
-// This function converts URLs in text to clickable links.
 function autoLink(text) {
   return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
 }
@@ -160,10 +159,10 @@ function renderPage(content, req) {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
           :root {
-              --primary: #6366f1;
-              --primary-hover: #4f46e5;
-              --dark: #1e293b;
-              --light: #f8fafc;
+              --primary: #00adb5;
+              --primary-hover: #00838f;
+              --dark: #222831;
+              --light: #eeeeee;
           }
           body {
               background: var(--light);
@@ -173,22 +172,11 @@ function renderPage(content, req) {
               flex-direction: column;
               transition: background 0.3s ease, color 0.3s ease;
           }
-          body.dark-mode {
-              --primary: #bb86fc;
-              --primary-hover: #985eff;
-              --dark: #121212;
-              --light: #1e1e1e;
-              background: var(--light);
-              color: #e0e0e0;
-          }
           /* Navbar */
           .navbar {
               background: rgba(255, 255, 255, 0.95);
               backdrop-filter: blur(10px);
               box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-          }
-          body.dark-mode .navbar {
-              background: rgba(18, 18, 18, 0.95);
           }
           .navbar .nav-link {
               margin-left: 10px;
@@ -208,7 +196,7 @@ function renderPage(content, req) {
           }
           .sidebar .nav-link:hover {
               color: var(--primary);
-              background: rgba(99, 102, 241, 0.1);
+              background: rgba(0, 173, 181, 0.1);
               border-radius: 0.5rem;
           }
           /* Video card */
@@ -218,9 +206,6 @@ function renderPage(content, req) {
               overflow: hidden;
               transition: transform 0.3s, box-shadow 0.3s;
               background: white;
-          }
-          body.dark-mode .video-card {
-              background: #2c2c2c;
           }
           .video-card:hover {
               transform: translateY(-5px);
@@ -287,6 +272,22 @@ function renderPage(content, req) {
           .button-animation:hover {
               transform: scale(1.05);
           }
+          /* User actions responsiveness */
+          .user-actions {
+              display: flex;
+              align-items: center;
+              gap: 15px;
+          }
+          @media (max-width: 576px) {
+              .user-actions {
+                  flex-direction: column;
+                  align-items: flex-start;
+              }
+              form.d-flex {
+                  flex-direction: column;
+                  gap: 5px;
+              }
+          }
           /* Suggested Videos */
           .suggested-card {
               margin-bottom: 1rem;
@@ -319,17 +320,20 @@ function renderPage(content, req) {
               <div class="d-flex align-items-center">
                   <form class="d-flex me-2" action="/search" method="GET">
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
-                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
+                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">
+                          <span style="font-size: 1.2em;">🔍</span>
+                      </button>
                   </form>
-                  <button class="btn btn-secondary me-2 button-animation" id="darkModeToggle">Toggle Dark Mode</button>
                   ${
                     req.session.userId
-                    ? `<a href="/subscriptions" class="nav-link button-animation">Subscriptions</a>
-                       <div class="d-flex align-items-center">
-                           <a href="/profile/${req.session.userId}" class="nav-link me-2">
-                               <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
-                           </a>
-                           <a class="nav-link button-animation" href="/logout">Logout</a>
+                    ? `<div class="user-actions">
+                           <a href="/subscriptions" class="nav-link button-animation">Subscriptions</a>
+                           <div class="d-flex align-items-center">
+                               <a href="/profile/${req.session.userId}" class="nav-link me-2">
+                                   <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
+                               </a>
+                               <a class="nav-link button-animation" href="/logout">Logout</a>
+                           </div>
                        </div>`
                     : `<a class="nav-link button-animation" href="/login">Login</a>
                        <a class="nav-link button-animation" href="/signup">Sign Up</a>`
@@ -391,9 +395,12 @@ function renderPage(content, req) {
           <div class="container">
               <p class="mb-0">By Villamor Gelera</p>
               <div class="mt-2">
-                  <a href="#" class="me-2 button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
-                  <a href="#" class="me-2 button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
-                  <a href="#" class="button-animation"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
+                  <a href="https://www.facebook.com/villamor.gelera.5/" class="me-2 button-animation">
+                    <img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/>
+                  </a>
+                  <a href="https://www.instagram.com/villamor.gelera" class="button-animation">
+                    <img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/>
+                  </a>
               </div>
           </div>
       </footer>
@@ -470,12 +477,6 @@ function renderPage(content, req) {
             alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
           }
         }
-  
-        // Dark Mode Toggle
-        const darkModeToggle = document.getElementById('darkModeToggle');
-        darkModeToggle.addEventListener('click', () => {
-          document.body.classList.toggle('dark-mode');
-        });
   
         // Back-to-top button
         const backToTopBtn = document.getElementById('backToTop');
