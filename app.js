@@ -59,6 +59,7 @@ dirs.forEach(dir => {
 });
 
 // ================== MONGOOSE SCHEMAS ==================
+// Update default profilePic to use a white placeholder image.
 const userSchema = new mongoose.Schema({
   username:     { type: String, unique: true },
   password:     String,
@@ -66,7 +67,7 @@ const userSchema = new mongoose.Schema({
   banned:       { type: Boolean, default: false },
   verified:     { type: Boolean, default: false },
   subscribers:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic:   { type: String, default: '/uploads/profiles/default.png' },
+  profilePic:   { type: String, default: 'https://via.placeholder.com/150/ffffff/000000?text=User' },
   backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
   about:        { type: String, default: '' },
   streamKey:    { type: String, default: '' } // New field for streaming
@@ -345,7 +346,8 @@ function renderPage(content, req) {
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
                       <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
                   </form>
-                  <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile Pic" style="width:40px;height:40px;object-fit:cover;border-radius:50%;margin-right:10px;">
+                  <!-- If logged in, show user image; if not, show guest placeholder -->
+                  <img src="${req.session.userId ? (req.session.profilePic || 'https://via.placeholder.com/40/ffffff/000000?text=User') : 'https://via.placeholder.com/40/ffffff/000000?text=Guest'}" alt="Profile Pic" style="width:40px;height:40px;object-fit:cover;border-radius:50%;margin-right:10px;">
                   ${
                     req.session.userId
                     ? ''  
@@ -760,7 +762,12 @@ app.get('/signup', (req, res) => {
 });
 
 app.post('/signup', async (req, res) => {
-  const { username, password } = req.body;
+  let { username, password } = req.body;
+  // Trim and normalize username to lowercase
+  username = username.trim().toLowerCase();
+  if(!username || !password) {
+    return res.send('Error signing up. All fields are required.');
+  }
   try {
     // Check if username already exists
     let existingUser = await User.findOne({ username });
@@ -799,7 +806,7 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username: username.trim().toLowerCase() });
     if (!user) return res.send('Invalid username or password.');
     if (user.banned) return res.send('Your account has been banned.');
     const valid = await bcrypt.compare(password, user.password);
