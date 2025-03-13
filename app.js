@@ -141,253 +141,281 @@ function renderPage(content, req) {
   const username    = req.session.username || '';
   return `
   <!DOCTYPE html>
-<html>
-<head>
-    <title>Baho ng Lahat</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --dark: #1e293b;
-            --light: #f8fafc;
-        }
-        body {
-            background: var(--light);
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        /* Dark mode overrides */
-        body.dark-mode {
-            --primary: #bb86fc;
-            --primary-hover: #985eff;
-            --dark: #121212;
-            --light: #1e1e1e;
-            background: var(--light);
-            color: #e0e0e0;
-        }
-        .navbar {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        body.dark-mode .navbar {
-            background: rgba(18, 18, 18, 0.95);
-        }
-        .video-card {
-            border: 0;
-            border-radius: 12px;
-            overflow: hidden;
-            transition: transform 0.2s, box-shadow 0.2s;
-            background: white;
-        }
-        body.dark-mode .video-card {
-            background: #2c2c2c;
-        }
-        .video-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
-        }
-        .video-thumbnail {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-            border-radius: 8px 8px 0 0;
-        }
-        .btn-primary {
-            background: var(--primary);
-            border: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-        }
-        .btn-primary:hover {
-            background: var(--primary-hover);
-        }
-        footer {
-            background: var(--dark);
-            color: white;
-            margin-top: auto;
-            padding: 2rem 0;
-        }
-        .preview-img {
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-            margin: 1rem 0;
-            max-width: 100%;
-        }
-        .badge {
-            background: var(--primary);
-            font-weight: 500;
-        }
-        .form-control {
-            border-radius: 8px;
-            padding: 12px;
-        }
-        .nav-link {
-            color: var(--dark);
-            font-weight: 500;
-            padding: 8px 16px !important;
-            border-radius: 8px;
-        }
-        .nav-link:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--primary);
-        }
-        /* Back-to-top button styling */
-        #backToTop {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            display: none;
-            z-index: 100;
-        }
-    </style>
-    <!-- Add Inter Font -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg sticky-top">
-        <div class="container">
-            <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
-          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
-          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
-          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
-          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
-          <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
-          ${
-            req.session.userId
-              ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
-              : ''
+  <html>
+  <head>
+      <title>Baho ng Lahat</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <!-- Bootstrap 5 -->
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+      <!-- Optional: Bootstrap Icons (for a nicer menu toggle icon) -->
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+      <style>
+          :root {
+              --primary: #6366f1;
+              --primary-hover: #4f46e5;
+              --dark: #1e293b;
+              --light: #f8fafc;
           }
-          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
-        </ul>
-        <!-- Search form -->
-        <form class="d-flex" action="/search" method="GET">
-          <input class="form-control me-2" type="search" name="query" placeholder="Search videos" aria-label="Search">
-          <button class="btn btn-outline-success" type="submit">Search</button>
-        </form>
-        <ul class="navbar-nav ms-2">
-          <!-- Dark Mode Toggle -->
-          <li class="nav-item">
-            <button class="btn btn-secondary" id="darkModeToggle">Toggle Dark Mode</button>
-          </li>
-          ${
-            req.session.userId
-              ? `<li class="nav-item"><a class="nav-link" href="/logout">Logout (${username})</a></li>`
-              : `<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
-                 <li class="nav-item"><a class="nav-link" href="/signup">Sign Up</a></li>`
+          body {
+              background: var(--light);
+              font-family: 'Inter', system-ui, -apple-system, sans-serif;
+              min-height: 100vh;
+              display: flex;
+              flex-direction: column;
           }
-        </ul>
-            </div>
-        </div>
-    </nav>
-
-    <main class="container py-4 flex-grow-1">
-        ${content}
-    </main>
-
-    <footer class="text-center">
-        <div class="container">
-            <p class="mb-0">By Villamor Gelera</p>
-            <div class="mt-2">
-                <!-- Social icons (if needed) -->
-                <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
-                <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
-                <a href="#"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
-            </div>
-        </div>
-    </footer>
-
-    <!-- Back-to-Top Button -->
-    <button id="backToTop" class="btn btn-primary">Top</button>
-
-    <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script>
-      // Thumbnail preview with mini autoplay on hover:
-      document.querySelectorAll('.video-thumbnail').forEach(img => {
-        img.addEventListener('mouseenter', function() {
-          const videoUrl = this.getAttribute('data-video');
-          if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
-          const preview = document.createElement('video');
-          preview.src = videoUrl;
-          preview.autoplay = true;
-          preview.muted = true;
-          preview.loop = true;
-          preview.width = this.clientWidth;
-          preview.height = this.clientHeight;
-          preview.style.objectFit = 'cover';
-          this.parentNode.replaceChild(preview, this);
+          /* Dark mode overrides */
+          body.dark-mode {
+              --primary: #bb86fc;
+              --primary-hover: #985eff;
+              --dark: #121212;
+              --light: #1e1e1e;
+              background: var(--light);
+              color: #e0e0e0;
+          }
+          /* Top Navbar */
+          .navbar {
+              background: rgba(255, 255, 255, 0.95);
+              backdrop-filter: blur(10px);
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+          }
+          body.dark-mode .navbar {
+              background: rgba(18, 18, 18, 0.95);
+          }
+          /* Sidebar styling */
+          .sidebar {
+              height: calc(100vh - 56px);
+              background: var(--light);
+              border-right: 1px solid #dee2e6;
+              padding-top: 1rem;
+          }
+          .sidebar .nav-link {
+              font-weight: 500;
+              color: var(--dark);
+              margin-bottom: 0.5rem;
+              padding: 0.5rem 1rem;
+          }
+          .sidebar .nav-link:hover {
+              color: var(--primary);
+              background: rgba(99, 102, 241, 0.1);
+              border-radius: 0.5rem;
+          }
+          /* Video card styles */
+          .video-card {
+              border: 0;
+              border-radius: 12px;
+              overflow: hidden;
+              transition: transform 0.2s, box-shadow 0.2s;
+              background: white;
+          }
+          body.dark-mode .video-card {
+              background: #2c2c2c;
+          }
+          .video-card:hover {
+              transform: translateY(-5px);
+              box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+          }
+          .video-thumbnail {
+              width: 100%;
+              height: 200px;
+              object-fit: cover;
+              border-radius: 8px 8px 0 0;
+          }
+          .btn-primary {
+              background: var(--primary);
+              border: none;
+              padding: 8px 16px;
+              border-radius: 8px;
+          }
+          .btn-primary:hover {
+              background: var(--primary-hover);
+          }
+          footer {
+              background: var(--dark);
+              color: white;
+              margin-top: auto;
+              padding: 2rem 0;
+          }
+          .preview-img {
+              border-radius: 8px;
+              box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+              margin: 1rem 0;
+              max-width: 100%;
+          }
+          /* Back-to-top button styling */
+          #backToTop {
+              position: fixed;
+              bottom: 20px;
+              right: 20px;
+              display: none;
+              z-index: 100;
+          }
+          /* Responsive adjustments */
+          @media (max-width: 767.98px) {
+              .sidebar {
+                  position: absolute;
+                  z-index: 1050;
+                  width: 200px;
+                  left: 0;
+                  top: 56px;
+                  background: var(--light);
+                  border-right: 1px solid #dee2e6;
+              }
+          }
+      </style>
+      <!-- Add Inter Font -->
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+      <!-- Top Navbar -->
+      <nav class="navbar navbar-expand-lg sticky-top">
+          <div class="container-fluid">
+              <div class="d-flex align-items-center">
+                  <button class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
+                      <i class="bi bi-list"></i> Menu
+                  </button>
+                  <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
+              </div>
+              <div class="d-flex align-items-center">
+                  <form class="d-flex me-2" action="/search" method="GET">
+                      <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
+                      <button class="btn btn-outline-success ms-2" type="submit">Search</button>
+                  </form>
+                  <button class="btn btn-secondary me-2" id="darkModeToggle">Toggle Dark Mode</button>
+                  ${req.session.userId
+                    ? `<a class="nav-link" href="/logout">Logout (${username})</a>`
+                    : `<a class="nav-link" href="/login">Login</a>
+                       <a class="nav-link" href="/signup">Sign Up</a>`}
+              </div>
+          </div>
+      </nav>
+      
+      <div class="container-fluid">
+          <div class="row">
+              <!-- Sidebar Navigation -->
+              <nav id="sidebar" class="col-md-2 d-none d-md-block sidebar">
+                  <div class="position-sticky">
+                      <ul class="nav flex-column">
+                          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+                          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
+                          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
+                          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
+                          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
+                          <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
+                          ${ req.session.userId
+                              ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
+                                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
+                              : '' }
+                          ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
+                      </ul>
+                  </div>
+              </nav>
+              <!-- Main Content -->
+              <main class="col-md-10 ms-sm-auto px-4">
+                  ${content}
+              </main>
+          </div>
+      </div>
+  
+      <footer class="text-center">
+          <div class="container">
+              <p class="mb-0">By Villamor Gelera</p>
+              <div class="mt-2">
+                  <!-- Social icons (if needed) -->
+                  <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
+                  <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
+                  <a href="#"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
+              </div>
+          </div>
+      </footer>
+  
+      <!-- Back-to-Top Button -->
+      <button id="backToTop" class="btn btn-primary">Top</button>
+  
+      <!-- Bootstrap 5 JS -->
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+      <script>
+        // Thumbnail preview with mini autoplay on hover:
+        document.querySelectorAll('.video-thumbnail').forEach(img => {
+          img.addEventListener('mouseenter', function() {
+            const videoUrl = this.getAttribute('data-video');
+            if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
+            const preview = document.createElement('video');
+            preview.src = videoUrl;
+            preview.autoplay = true;
+            preview.muted = true;
+            preview.loop = true;
+            preview.width = this.clientWidth;
+            preview.height = this.clientHeight;
+            preview.style.objectFit = 'cover';
+            this.parentNode.replaceChild(preview, this);
+          });
         });
-      });
-
-      // Preview images (profile pic, background pic, thumbnail) before uploading
-      function setupPreview(inputId, previewId) {
-        const inputEl = document.getElementById(inputId);
-        const previewEl = document.getElementById(previewId);
-        if (!inputEl || !previewEl) return;
-        inputEl.addEventListener('change', function() {
-          const file = this.files[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-              previewEl.src = e.target.result;
+  
+        // Preview images (profile pic, background pic, thumbnail) before uploading
+        function setupPreview(inputId, previewId) {
+          const inputEl = document.getElementById(inputId);
+          const previewEl = document.getElementById(previewId);
+          if (!inputEl || !previewEl) return;
+          inputEl.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+              const reader = new FileReader();
+              reader.onload = function(e) {
+                previewEl.src = e.target.result;
+              }
+              reader.readAsDataURL(file);
+            } else {
+              previewEl.src = '';
             }
-            reader.readAsDataURL(file);
+          });
+        }
+        setupPreview('profilePicInput', 'profilePicPreview');
+        setupPreview('backgroundPicInput', 'backgroundPicPreview');
+        setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
+  
+        // "Share" button using the Web Share API
+        function shareVideo(title) {
+          if (navigator.share) {
+            navigator.share({
+              title: title,
+              text: 'Check out this video on Baho ng Lahat!',
+              url: window.location.href
+            })
+            .catch(err => console.log('Share canceled or failed: ', err));
           } else {
-            previewEl.src = '';
+            alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+          }
+        }
+  
+        // Dark Mode Toggle
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        darkModeToggle.addEventListener('click', () => {
+          document.body.classList.toggle('dark-mode');
+        });
+  
+        // Back-to-top button
+        const backToTopBtn = document.getElementById('backToTop');
+        window.addEventListener('scroll', () => {
+          if (window.scrollY > 300) {
+            backToTopBtn.style.display = 'block';
+          } else {
+            backToTopBtn.style.display = 'none';
           }
         });
-      }
-      setupPreview('profilePicInput', 'profilePicPreview');
-      setupPreview('backgroundPicInput', 'backgroundPicPreview');
-      setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
-
-      // "Share" button using the Web Share API
-      function shareVideo(title) {
-        if (navigator.share) {
-          navigator.share({
-            title: title,
-            text: 'Check out this video on Baho ng Lahat!',
-            url: window.location.href
-          })
-          .catch(err => console.log('Share canceled or failed: ', err));
-        } else {
-          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+        backToTopBtn.addEventListener('click', () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+  
+        // Sidebar toggle for mobile devices
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        if(sidebarToggle) {
+          sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('d-none');
+          });
         }
-      }
-
-      // Dark Mode Toggle
-      const darkModeToggle = document.getElementById('darkModeToggle');
-      darkModeToggle.addEventListener('click', () => {
-        document.body.classList.toggle('dark-mode');
-      });
-
-      // Back-to-top button
-      const backToTopBtn = document.getElementById('backToTop');
-      window.addEventListener('scroll', () => {
-        if (window.scrollY > 300) {
-          backToTopBtn.style.display = 'block';
-        } else {
-          backToTopBtn.style.display = 'none';
-        }
-      });
-      backToTopBtn.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-    </script>
+      </script>
   </body>
   </html>
   `;
