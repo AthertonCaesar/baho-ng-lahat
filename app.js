@@ -12,6 +12,14 @@ const ffmpeg        = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
+// Cloudinary for persistent storage
+const cloudinary    = require('cloudinary').v2;
+cloudinary.config({
+  cloud_name: 'df0yc1cvr',    // Replace with your Cloudinary cloud name
+  api_key: '143758952799997',          // Replace with your Cloudinary API key
+  api_secret: 'a9TyH_t9lqZvem3cKkYSoXJ_6-E'     // Replace with your Cloudinary API secret
+});
+
 // ================== INITIALIZE APP ==================
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,9 +31,10 @@ mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch(err => console.log('MongoDB connection error:', err));
 
 // ================== MIDDLEWARE ==================
+// Enable useTempFiles so Cloudinary can access the uploaded file paths
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(fileUpload());
+app.use(fileUpload({ useTempFiles: true }));
 app.use(session({
   secret: 'yourSecretKey',
   resave: false,
@@ -660,56 +669,43 @@ app.get('/upload', isAuthenticated, (req, res) => {
   res.send(renderPage(form, req));
 });
 
-// Upload Video (POST handling)
+// Upload Video (POST handling) using Cloudinary
 app.post('/upload', isAuthenticated, async (req, res) => {
   try {
     if (!req.files || !req.files.videoFile) {
       return res.send('No video file uploaded.');
     }
-    // 1) Move the video file to disk
     let videoFile = req.files.videoFile;
-    let videoUploadPath = path.join(__dirname, 'uploads', 'videos', Date.now() + '-' + videoFile.name);
-    await videoFile.mv(videoUploadPath);
+    // Upload video to Cloudinary as a video resource
+    let videoResult = await cloudinary.uploader.upload(videoFile.tempFilePath, {
+      resource_type: 'video',
+      folder: 'videos'
+    });
+    let filePath = videoResult.secure_url;
 
-    // 2) If user didn't provide a thumbnail, auto-generate one from the video
-    let thumbnailPath = '/uploads/thumbnails/default.png';
+    let thumbnailPath;
     if (req.files.thumbnailFile) {
-      // They uploaded a custom thumbnail
+      // User uploaded a custom thumbnail; upload it to Cloudinary
       let thumbFile = req.files.thumbnailFile;
-      let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', Date.now() + '-' + thumbFile.name);
-      await thumbFile.mv(thumbUploadPath);
-      thumbnailPath = '/uploads/thumbnails/' + path.basename(thumbUploadPath);
+      let thumbResult = await cloudinary.uploader.upload(thumbFile.tempFilePath, {
+        resource_type: 'image',
+        folder: 'thumbnails'
+      });
+      thumbnailPath = thumbResult.secure_url;
     } else {
-      // Auto-generate using FFmpeg
-      let thumbFileName = Date.now() + '-auto.png';
-      let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', thumbFileName);
-      // We'll pick a frame at 1 second
-      await new Promise((resolve, reject) => {
-        ffmpeg(videoUploadPath)
-          .on('end', () => {
-            console.log('Thumbnail generated');
-            thumbnailPath = '/uploads/thumbnails/' + thumbFileName;
-            resolve();
-          })
-          .on('error', err => {
-            console.error('Thumbnail generation error:', err);
-            // fallback to default
-            resolve();
-          })
-          .screenshots({
-            timestamps: [1],
-            filename: thumbFileName,
-            folder: path.join(__dirname, 'uploads', 'thumbnails'),
-            size: '320x240'
-          });
+      // Auto-generate a thumbnail using Cloudinary's transformation on the video
+      thumbnailPath = cloudinary.url(videoResult.public_id + '.png', {
+        resource_type: 'video',
+        format: 'png',
+        transformation: [{ width: 320, height: 240, crop: 'fill' }]
       });
     }
 
-    // 3) Create and save the new video document
+    // Create and save the new video document with Cloudinary URLs
     let newVideo = new Video({
       title:       req.body.title,
       description: req.body.description,
-      filePath:    '/uploads/videos/' + path.basename(videoUploadPath),
+      filePath:    filePath,
       thumbnail:   thumbnailPath,
       category:    req.body.category || 'General',
       owner:       req.session.userId
@@ -979,12 +975,13 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
 });
 
 // ========== DOWNLOAD FEATURE ==========
+// Since videos are stored on Cloudinary, you can redirect to the Cloudinary URL or handle it differently
 app.get('/download/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    const filePath = path.join(__dirname, video.filePath);
-    res.download(filePath, path.basename(filePath));
+    // Redirect to the Cloudinary video URL
+    res.redirect(video.filePath);
   } catch (err) {
     console.error('Download error:', err);
     res.send('Error downloading file.');
@@ -1016,8 +1013,6 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
 });
 
 // ========== USER PROFILE ==========
-
-// View Profile
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
@@ -1113,22 +1108,26 @@ app.get('/profile/:id', async (req, res) => {
   }
 });
 
-// Update Profile
+// Update Profile (Using Cloudinary for image uploads)
 app.post('/updateProfile', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
     if(!user) return res.send('User not found.');
     if(req.files && req.files.profilePic) {
       let pic = req.files.profilePic;
-      let picPath = path.join(__dirname, 'uploads', 'profiles', Date.now() + '-' + pic.name);
-      await pic.mv(picPath);
-      user.profilePic = '/uploads/profiles/' + path.basename(picPath);
+      let picResult = await cloudinary.uploader.upload(pic.tempFilePath, {
+        resource_type: 'image',
+        folder: 'profiles'
+      });
+      user.profilePic = picResult.secure_url;
     }
     if(req.files && req.files.backgroundPic) {
       let bg = req.files.backgroundPic;
-      let bgPath = path.join(__dirname, 'uploads', 'backgrounds', Date.now() + '-' + bg.name);
-      await bg.mv(bgPath);
-      user.backgroundPic = '/uploads/backgrounds/' + path.basename(bgPath);
+      let bgResult = await cloudinary.uploader.upload(bg.tempFilePath, {
+        resource_type: 'image',
+        folder: 'backgrounds'
+      });
+      user.backgroundPic = bgResult.secure_url;
     }
     user.about = req.body.about;
     await user.save();
@@ -1140,7 +1139,6 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
 });
 
 // ========== LIVE STREAM ACTIONS ==========
-// Save the user's liveLink
 app.post('/setLiveLink', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1153,7 +1151,6 @@ app.post('/setLiveLink', isAuthenticated, async (req, res) => {
   }
 });
 
-// Go Live
 app.post('/goLive', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1166,7 +1163,6 @@ app.post('/goLive', isAuthenticated, async (req, res) => {
   }
 });
 
-// Stop Live
 app.post('/stopLive', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1215,7 +1211,6 @@ app.get('/admin', isAdmin, async (req, res) => {
   }
 });
 
-// Toggle Ban/Unban a User (Admin only)
 app.post('/ban/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
@@ -1228,7 +1223,6 @@ app.post('/ban/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Verify a User (Admin only)
 app.post('/verify/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
