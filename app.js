@@ -187,12 +187,14 @@ function renderPage(content, req) {
               background: var(--light);
               border-right: 1px solid #dee2e6;
               padding-top: 1rem;
+              transition: transform 0.3s ease;
           }
           .sidebar .nav-link {
               font-weight: 500;
               color: var(--dark);
               margin-bottom: 0.5rem;
               padding: 0.5rem 1rem;
+              animation: fadeIn 0.5s ease-in-out;
           }
           .sidebar .nav-link:hover {
               color: var(--primary);
@@ -234,8 +236,13 @@ function renderPage(content, req) {
               padding: 2rem 0;
           }
           footer a img {
-              /* Updated facebook image should be pure white and without blue accent */
+              /* Ensure Facebook icon appears pure white without blue accent */
               filter: brightness(0) invert(1);
+          }
+          /* Remove any blue line or border in footer links */
+          footer a {
+              border: none;
+              outline: none;
           }
           .preview-img {
               border-radius: 8px;
@@ -276,12 +283,7 @@ function renderPage(content, req) {
           .button-animation:hover {
               transform: scale(1.05);
           }
-          /* User actions responsiveness */
-          .user-actions {
-              display: flex;
-              align-items: center;
-              gap: 15px;
-          }
+          /* Mobile specific adjustments */
           @media (max-width: 576px) {
               .user-actions {
                   flex-direction: column;
@@ -290,6 +292,10 @@ function renderPage(content, req) {
               form.d-flex {
                   flex-direction: column;
                   gap: 5px;
+              }
+              /* Extra spacing for buttons */
+              .btn {
+                  margin-bottom: 10px;
               }
           }
           /* Suggested Videos Animation */
@@ -314,6 +320,14 @@ function renderPage(content, req) {
               }
               .navbar .nav-link { margin-left: 5px; }
           }
+          /* Sidebar slide in animation for mobile menu */
+          @keyframes slideIn {
+              from { transform: translateX(-100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+          }
+          .slide-in {
+              animation: slideIn 0.3s forwards;
+          }
       </style>
   </head>
   <body>
@@ -331,9 +345,10 @@ function renderPage(content, req) {
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
                       <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
                   </form>
+                  <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile Pic" style="width:40px;height:40px;object-fit:cover;border-radius:50%;margin-right:10px;">
                   ${
                     req.session.userId
-                    ? ''  // Moved user links (subscriptions/logout) to sidebar when logged in.
+                    ? ''  
                     : `<a class="nav-link button-animation" href="/login">Login</a>
                        <a class="nav-link button-animation" href="/signup">Sign Up</a>`
                   }
@@ -469,12 +484,16 @@ function renderPage(content, req) {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         });
   
-        // Sidebar toggle for mobile devices
+        // Sidebar toggle for mobile devices with slide-in animation
         const sidebarToggle = document.getElementById('sidebarToggle');
         const sidebar = document.getElementById('sidebar');
         if(sidebarToggle) {
           sidebarToggle.addEventListener('click', () => {
             sidebar.classList.toggle('d-none');
+            if (!sidebar.classList.contains('d-none')) {
+              sidebar.classList.add('slide-in');
+              setTimeout(() => { sidebar.classList.remove('slide-in'); }, 300);
+            }
           });
         }
   
@@ -484,7 +503,7 @@ function renderPage(content, req) {
           qualityDropdown.addEventListener('change', function() {
             let quality = this.value;
             let videoPlayer = document.querySelector('video');
-            // This is a dummy implementation. In production, you would update the video source based on selected quality.
+            // Dummy implementation; update video source in production
             console.log('Video quality changed to ' + quality + 'p');
           });
         }
@@ -743,17 +762,18 @@ app.get('/signup', (req, res) => {
 app.post('/signup', async (req, res) => {
   const { username, password } = req.body;
   try {
+    // Check if username already exists
+    let existingUser = await User.findOne({ username });
+    if(existingUser) {
+      return res.send('Error signing up. Username already taken.');
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({ username, password: hashedPassword });
     await newUser.save();
     res.redirect('/login');
   } catch (err) {
     console.error('Error signing up:', err);
-    if(err.code === 11000) {
-      res.send('Error signing up. Username already taken.');
-    } else {
-      res.send('Error signing up.');
-    }
+    res.send('Error signing up.');
   }
 });
 
@@ -968,7 +988,7 @@ app.get('/video/:id', async (req, res) => {
           <div class="form-group mb-3">
             <textarea name="comment" class="form-control" placeholder="Add a comment..." required></textarea>
           </div>
-          <button type="submit" class="btn btn-primary button-animation">Comment</button>
+          <button type="submit" class="btn btn-primary button-animation mt-3">Comment</button>
         </form>
       `;
     } else {
@@ -1447,7 +1467,7 @@ app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
 
 // Dummy route for stopping live stream (admin only)
 app.post('/admin/stop/live/:id', isAdmin, async (req, res) => {
-  // This is a placeholder. Actual live stream management would depend on your streaming integration.
+  // Placeholder. Actual live stream management would depend on your streaming integration.
   res.send('Live stream stopped.');
 });
 
