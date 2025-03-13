@@ -17,7 +17,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ================== MONGODB CONNECTION ==================
-const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/bahonlahat';
+const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat';
 mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.log('MongoDB connection error:', err));
@@ -140,7 +140,7 @@ function renderPage(content, req) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
-            --primary: #f8fafc;
+            --primary: #6366f1;
             --primary-hover: #4f46e5;
             --dark: #1e293b;
             --light: #f8fafc;
@@ -155,76 +155,48 @@ function renderPage(content, req) {
         }
 
         .navbar {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
 
-.video-card {
-  border: 0;
-  border-radius: 16px;
-  overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  background: white;
-  position: relative;
-}
+        .video-card {
+            border: 0;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            background: white;
+        }
 
-.video-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+        }
 
-.video-card:hover::before {
-  opacity: 1;
-}
-
-.video-thumbnail {
-  width: 100%;
-  height: 200px;
-  object-fit: cover;
-  border-radius: 16px 16px 0 0;
-  aspect-ratio: 16/9;
-}
-
-.card-body {
-  padding: 1.5rem;
-}
-
-.card-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
-}
+        .video-thumbnail {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 8px 8px 0 0;
+        }
 
         .btn-primary {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
+            background: var(--primary);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+        }
 
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
-}
+        .btn-primary:hover {
+            background: var(--primary-hover);
+        }
 
         footer {
-  background: #1e293b;
-  color: rgba(255, 255, 255, 0.9);
-  padding: 3rem 0;
-  margin-top: 4rem;
-}
+            background: var(--dark);
+            color: white;
+            margin-top: auto;
+            padding: 2rem 0;
+        }
 
         .preview-img {
             border-radius: 8px;
@@ -238,38 +210,21 @@ function renderPage(content, req) {
         }
 
         .form-control {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  transition: all 0.3s ease;
-}
-
-.form-control:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.preview-img {
-  border-radius: 12px;
-  margin-top: 1rem;
-  max-width: 200px;
-  height: auto;
-  border: 2px solid #e2e8f0;
-}
+            border-radius: 8px;
+            padding: 12px;
+        }
 
         .nav-link {
-  color: white !important;
-  transition: all 0.3s ease;
-}
+            color: var(--dark);
+            font-weight: 500;
+            padding: 8px 16px !important;
+            border-radius: 8px;
+        }
 
         .nav-link:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
-}
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--primary);
+        }
     </style>
     <!-- Add Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -857,48 +812,29 @@ app.get('/video/:id', async (req, res) => {
 
     // Layout: main video left (col-8), suggestions right (col-4)
     let videoPage = `
-  <div class="row">
-    <div class="col-lg-8">
-      <div class="card border-0 shadow-sm mb-4">
-        <div class="card-body p-0">
-          <video class="rounded-top" width="100%" height="auto" controls controlsList="nodownload">
+      <div class="row">
+        <div class="col-md-8">
+          <h2>${video.title}</h2>
+          <video width="100%" height="auto" controls>
             <source src="${video.filePath}" type="video/mp4">
+            Your browser does not support the video tag.
           </video>
-          <div class="p-4">
-            <h1 class="h2 mb-3">${video.title}</h1>
-            <div class="d-flex gap-2 mb-3">
-              ${subscribeButton}
-              ${likeBtn} 
-              ${dislikeBtn}
-              ${shareButton}
-            </div>
-            <div class="d-flex gap-2 align-items-center mb-4">
-              <img src="${video.owner.profilePic}" 
-                   class="rounded-circle" 
-                   style="width:40px;height:40px;object-fit:cover;">
-              <div>
-                <a href="/profile/${video.owner._id}" class="text-decoration-none h5 mb-0">${video.owner.username}</a>
-                <p class="text-muted small mb-0">${video.owner.subscribers.length} subscribers</p>
-              </div>
-            </div>
-            <div class="card mb-4">
-              <div class="card-body">
-                <h3 class="h5">Description</h3>
-                <p class="mb-0">${video.description}</p>
-              </div>
-            </div>
-            ${commentsHtml}
-            ${req.session.userId ? commentForm : '<p>Please log in to comment.</p>'}
-          </div>
+          <p>Category: ${video.category}</p>
+          <p>${video.description}</p>
+          <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
+          ${subscribeButton}
+          ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
+          <hr>
+          <h4>Comments</h4>
+          ${commentsHtml}
+          ${req.session.userId ? commentForm : '<p>Please log in to comment.</p>'}
+        </div>
+        <div class="col-md-4">
+          <h4>Suggested Videos</h4>
+          ${suggestedHtml}
         </div>
       </div>
-    </div>
-    <div class="col-lg-4">
-      <h3 class="h5 mb-3">Suggested Videos</h3>
-      ${suggestedHtml}
-    </div>
-  </div>
-`;
+    `;
     res.send(renderPage(videoPage, req));
   } catch (err) {
     console.error('View video error:', err);
@@ -1120,32 +1056,14 @@ app.get('/profile/:id', async (req, res) => {
     }
 
     let profileHtml = `
-    <div class="mb-4">
-  <div class="card border-0 shadow-sm">
-    <div class="card-body position-relative" 
-         style="background: url('${userProfile.backgroundPic}') center center/cover; 
-                min-height: 200px;
-                border-radius: 16px;">
-      <div class="position-absolute bottom-0 start-0 translate-y-50 ms-4">
-        <img src="${userProfile.profilePic}" 
-             class="rounded-circle border-4 border-white shadow"
-             style="width:100px;height:100px;object-fit:cover;">
-      </div>
-    </div>
-    <div class="card-body pt-5 mt-4">
-      <div class="d-flex justify-content-between align-items-center">
-        <div>
-          <h1 class="h2 mb-0">${userProfile.username}</h1>
-          ${userProfile.verified ? '<span class="badge bg-primary">Verified Creator</span>' : ''}
-        </div>
-        <div class="text-muted">${userProfile.subscribers.length} subscribers</div>
-      </div>
-      <p class="lead mt-3">${userProfile.about}</p>
-      ${liveSection}
-    </div>
-  </div>
-</div>
-`;
+    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge badge-info">Verified</span>' : ''}</h2>
+    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">
+    <p>${userProfile.about}</p>
+    <p>Subscribers: ${userProfile.subscribers.length}</p>
+    ${liveSection}
+    <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
+    ${videosHtml}
+    `;
 
     // If this is the owner, allow editing profile and live status
     if(req.session.userId && req.session.userId === req.params.id) {
