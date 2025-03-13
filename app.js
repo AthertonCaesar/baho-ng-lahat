@@ -16,8 +16,8 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const cloudinary    = require('cloudinary').v2;
 cloudinary.config({
   cloud_name: 'df0yc1cvr',    // Replace with your Cloudinary cloud name
-  api_key: '143758952799997',          // Replace with your Cloudinary API key
-  api_secret: 'a9TyH_t9lqZvem3cKkYSoXJ_6-E'     // Replace with your Cloudinary API secret
+  api_key: '143758952799997', // Replace with your Cloudinary API key
+  api_secret: 'a9TyH_t9lqZvem3cKkYSoXJ_6-E' // Replace with your Cloudinary API secret
 });
 
 // ================== INITIALIZE APP & SOCKET.IO ==================
@@ -233,6 +233,10 @@ function renderPage(content, req) {
               margin-top: auto;
               padding: 2rem 0;
           }
+          footer a img {
+              /* Updated facebook image should be pure white and without blue accent */
+              filter: brightness(0) invert(1);
+          }
           .preview-img {
               border-radius: 8px;
               box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
@@ -288,9 +292,14 @@ function renderPage(content, req) {
                   gap: 5px;
               }
           }
-          /* Suggested Videos */
+          /* Suggested Videos Animation */
           .suggested-card {
               margin-bottom: 1rem;
+              animation: fadeIn 0.5s ease-in-out;
+          }
+          @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(20px); }
+              to { opacity: 1; transform: translateY(0); }
           }
           /* Responsive adjustments */
           @media (max-width: 767.98px) {
@@ -320,21 +329,11 @@ function renderPage(content, req) {
               <div class="d-flex align-items-center">
                   <form class="d-flex me-2" action="/search" method="GET">
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
-                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">
-                          <span style="font-size: 1.2em;">🔍</span>
-                      </button>
+                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
                   </form>
                   ${
                     req.session.userId
-                    ? `<div class="user-actions">
-                           <a href="/subscriptions" class="nav-link button-animation">Subscriptions</a>
-                           <div class="d-flex align-items-center">
-                               <a href="/profile/${req.session.userId}" class="nav-link me-2">
-                                   <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
-                               </a>
-                               <a class="nav-link button-animation" href="/logout">Logout</a>
-                           </div>
-                       </div>`
+                    ? ''  // Moved user links (subscriptions/logout) to sidebar when logged in.
                     : `<a class="nav-link button-animation" href="/login">Login</a>
                        <a class="nav-link button-animation" href="/signup">Sign Up</a>`
                   }
@@ -358,7 +357,9 @@ function renderPage(content, req) {
                           ${
                             req.session.userId
                             ? `<li class="nav-item"><a class="nav-link button-animation" href="/upload">Upload Video</a></li>
-                               <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>`
+                               <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/subscriptions">Subscriptions</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/logout">Logout</a></li>`
                             : ''
                           }
                           ${ isAdminUser ? `<li class="nav-item"><a class="nav-link button-animation" href="/admin">Admin Panel</a></li>` : '' }
@@ -372,34 +373,15 @@ function renderPage(content, req) {
           </div>
       </div>
       
-      <!-- Login Required Modal -->
-      <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
-         <div class="modal-dialog">
-           <div class="modal-content">
-             <div class="modal-header">
-               <h5 class="modal-title" id="loginModalLabel">Login Required</h5>
-               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-             </div>
-             <div class="modal-body">
-               Please log in to access this feature.
-             </div>
-             <div class="modal-footer">
-               <a href="/login" class="btn btn-primary">Login</a>
-               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-             </div>
-           </div>
-         </div>
-      </div>
-      
       <footer class="text-center">
           <div class="container">
               <p class="mb-0">By Villamor Gelera</p>
               <div class="mt-2">
                   <a href="https://www.facebook.com/villamor.gelera.5/" class="me-2 button-animation">
-                    <img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/>
+                    <img src="https://img.icons8.com/ios-glyphs/24/ffffff/facebook-new.png" alt="Facebook"/>
                   </a>
                   <a href="https://www.instagram.com/villamor.gelera" class="button-animation">
-                    <img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/>
+                    <img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png" alt="Instagram"/>
                   </a>
               </div>
           </div>
@@ -496,10 +478,15 @@ function renderPage(content, req) {
           });
         }
   
-        // Function to show login prompt modal
-        function showLoginPrompt() {
-          var loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
-          loginModal.show();
+        // Video quality dropdown listener (if present)
+        const qualityDropdown = document.getElementById('videoQuality');
+        if(qualityDropdown) {
+          qualityDropdown.addEventListener('change', function() {
+            let quality = this.value;
+            let videoPlayer = document.querySelector('video');
+            // This is a dummy implementation. In production, you would update the video source based on selected quality.
+            console.log('Video quality changed to ' + quality + 'p');
+          });
         }
       </script>
   </body>
@@ -762,7 +749,11 @@ app.post('/signup', async (req, res) => {
     res.redirect('/login');
   } catch (err) {
     console.error('Error signing up:', err);
-    res.send('Error signing up. Username might already be taken.');
+    if(err.code === 11000) {
+      res.send('Error signing up. Username already taken.');
+    } else {
+      res.send('Error signing up.');
+    }
   }
 });
 
@@ -991,6 +982,15 @@ app.get('/video/:id', async (req, res) => {
       <div class="row">
         <div class="col-md-8">
           <h2>${video.title}</h2>
+          <div class="mb-2">
+            <label for="videoQuality" class="form-label">Video Quality:</label>
+            <select id="videoQuality" class="form-select" style="max-width: 150px;">
+              <option value="360">360p</option>
+              <option value="480">480p</option>
+              <option value="720" selected>720p</option>
+              <option value="1080">1080p</option>
+            </select>
+          </div>
           <video width="100%" height="auto" controls>
             <source src="${video.filePath}" type="video/mp4">
             Your browser does not support the video tag.
