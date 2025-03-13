@@ -136,7 +136,13 @@ async function isAdmin(req, res, next) {
   }
 }
 
-// ================== HTML RENDERER (WITH SCRIPTS & SOCKET.IO) ==================
+// ================== AUTO-LINK FUNCTION ==================
+// This function converts URLs in text to clickable links.
+function autoLink(text) {
+  return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+}
+
+// ================== HTML RENDERER (WITH SCRIPTS, SOCKET.IO & MODALS) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -281,6 +287,10 @@ function renderPage(content, req) {
           .button-animation:hover {
               transform: scale(1.05);
           }
+          /* Suggested Videos */
+          .suggested-card {
+              margin-bottom: 1rem;
+          }
           /* Responsive adjustments */
           @media (max-width: 767.98px) {
               .sidebar {
@@ -314,7 +324,8 @@ function renderPage(content, req) {
                   <button class="btn btn-secondary me-2 button-animation" id="darkModeToggle">Toggle Dark Mode</button>
                   ${
                     req.session.userId
-                    ? `<div class="d-flex align-items-center">
+                    ? `<a href="/subscriptions" class="nav-link button-animation">Subscriptions</a>
+                       <div class="d-flex align-items-center">
                            <a href="/profile/${req.session.userId}" class="nav-link me-2">
                                <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
                            </a>
@@ -356,7 +367,26 @@ function renderPage(content, req) {
               </main>
           </div>
       </div>
-  
+      
+      <!-- Login Required Modal -->
+      <div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+         <div class="modal-dialog">
+           <div class="modal-content">
+             <div class="modal-header">
+               <h5 class="modal-title" id="loginModalLabel">Login Required</h5>
+               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+             </div>
+             <div class="modal-body">
+               Please log in to access this feature.
+             </div>
+             <div class="modal-footer">
+               <a href="/login" class="btn btn-primary">Login</a>
+               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+             </div>
+           </div>
+         </div>
+      </div>
+      
       <footer class="text-center">
           <div class="container">
               <p class="mb-0">By Villamor Gelera</p>
@@ -383,7 +413,7 @@ function renderPage(content, req) {
           notif.style.display = 'block';
           setTimeout(function() { notif.style.display = 'none'; }, 3000);
         });
-
+  
         // Thumbnail preview with mini autoplay on hover:
         document.querySelectorAll('.video-thumbnail').forEach(img => {
           img.addEventListener('mouseenter', function() {
@@ -406,7 +436,6 @@ function renderPage(content, req) {
           const inputEl = document.getElementById(inputId);
           const previewEl = document.getElementById(previewId);
           if (!inputEl || !previewEl) return;
-          // Hide preview initially
           previewEl.style.display = 'none';
           inputEl.addEventListener('change', function() {
             const file = this.files[0];
@@ -465,6 +494,12 @@ function renderPage(content, req) {
             sidebar.classList.toggle('d-none');
           });
         }
+  
+        // Function to show login prompt modal
+        function showLoginPrompt() {
+          var loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+          loginModal.show();
+        }
       </script>
   </body>
   </html>
@@ -492,7 +527,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Category: ${video.category}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -512,7 +547,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -532,7 +567,7 @@ app.get('/', async (req, res) => {
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
             <p class="text-muted"><small>Views: ${video.viewCount}</small></p>
-            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -574,7 +609,7 @@ app.get('/search', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -603,7 +638,7 @@ app.get('/music', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -630,7 +665,7 @@ app.get('/gaming', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -657,7 +692,7 @@ app.get('/news', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -684,7 +719,7 @@ app.get('/general', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -871,40 +906,71 @@ app.get('/video/:id', async (req, res) => {
     let suggestedHtml = '';
     suggested.forEach(sv => {
       suggestedHtml += `
-      <div class="card mb-2">
+      <div class="card suggested-card">
         <div class="card-body p-2">
           <img src="${sv.thumbnail}" alt="Thumbnail"
                class="video-thumbnail" data-video="${sv.filePath}"
-               style="width:100%; max-height:100px; object-fit:cover;">
+               style="width:100%; max-height:100px; object-fit:cover; border-radius:5px;">
           <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
-          <a href="/video/${sv._id}" class="btn btn-sm btn-primary button-animation">Watch</a>
+          <a href="/video/${sv._id}" class="btn btn-sm btn-primary button-animation"><i class="bi bi-play-circle"></i> Watch</a>
         </div>
       </div>
       `;
     });
     let subscribeButton = '';
-    if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
-      let isSubscribed = video.owner.subscribers.includes(req.session.userId);
-      subscribeButton = `
-      <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
-        <button class="btn btn-info button-animation me-2">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
-      </form>
-      `;
+    if (req.session.userId) {
+      if(req.session.userId !== video.owner._id.toString()) {
+        let isSubscribed = video.owner.subscribers.includes(req.session.userId);
+        subscribeButton = `
+        <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
+          <button class="btn btn-info button-animation me-2" type="submit">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+        </form>
+        `;
+      }
+    } else {
+      subscribeButton = `<button class="btn btn-info button-animation me-2" onclick="showLoginPrompt()">Subscribe</button>`;
     }
-    let downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary button-animation me-2">Download</a>`;
+    let downloadButton = '';
+    if (req.session.userId) {
+      downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary button-animation me-2"><i class="bi bi-download"></i> Download</a>`;
+    } else {
+      downloadButton = `<button class="btn btn-secondary button-animation me-2" onclick="showLoginPrompt()"><i class="bi bi-download"></i> Download</button>`;
+    }
     let likeBtn = '';
-    let dislikeBtn = '';
-    let editDelete = '';
-    let commentForm = '';
     if (req.session.userId) {
       likeBtn = `
         <form method="POST" action="/like/${video._id}" style="display:inline;">
-          <button class="btn btn-success button-animation me-2">Like (${video.likes.length})</button>
+          <button class="btn btn-success button-animation me-2" type="submit"><i class="bi bi-hand-thumbs-up"></i> Like (${video.likes.length})</button>
         </form>`;
+    } else {
+      likeBtn = `<button class="btn btn-success button-animation me-2" onclick="showLoginPrompt()"><i class="bi bi-hand-thumbs-up"></i> Like (${video.likes.length})</button>`;
+    }
+    let dislikeBtn = '';
+    if (req.session.userId) {
       dislikeBtn = `
         <form method="POST" action="/dislike/${video._id}" style="display:inline;">
-          <button class="btn btn-warning button-animation me-2">Dislike (${video.dislikes.length})</button>
+          <button class="btn btn-warning button-animation me-2" type="submit"><i class="bi bi-hand-thumbs-down"></i> Dislike (${video.dislikes.length})</button>
         </form>`;
+    } else {
+      dislikeBtn = `<button class="btn btn-warning button-animation me-2" onclick="showLoginPrompt()"><i class="bi bi-hand-thumbs-down"></i> Dislike (${video.dislikes.length})</button>`;
+    }
+    let editDelete = '';
+    if (req.session.userId && video.owner._id.toString() === req.session.userId) {
+      editDelete = `
+        <a href="/edit/${video._id}" class="btn btn-secondary button-animation me-2"><i class="bi bi-pencil"></i> Edit</a>
+        <form method="POST" action="/delete/${video._id}" style="display:inline;">
+          <button type="submit" class="btn btn-danger button-animation me-2"><i class="bi bi-trash"></i> Delete</button>
+        </form>
+      `;
+    }
+    let shareButton = '';
+    if (req.session.userId) {
+      shareButton = `<button class="btn btn-outline-primary button-animation me-2" onclick="shareVideo('${video.title}')"><i class="bi bi-share"></i> Share</button>`;
+    } else {
+      shareButton = `<button class="btn btn-outline-primary button-animation me-2" onclick="showLoginPrompt()"><i class="bi bi-share"></i> Share</button>`;
+    }
+    let commentForm = '';
+    if (req.session.userId) {
       commentForm = `
         <form method="POST" action="/comment/${video._id}">
           <div class="form-group mb-3">
@@ -913,20 +979,13 @@ app.get('/video/:id', async (req, res) => {
           <button type="submit" class="btn btn-primary button-animation">Comment</button>
         </form>
       `;
-      if (video.owner._id.toString() === req.session.userId) {
-        editDelete = `
-          <a href="/edit/${video._id}" class="btn btn-secondary button-animation me-2">Edit</a>
-          <form method="POST" action="/delete/${video._id}" style="display:inline;">
-            <button type="submit" class="btn btn-danger button-animation me-2">Delete</button>
-          </form>
-        `;
-      }
+    } else {
+      commentForm = `<button class="btn btn-primary button-animation" onclick="showLoginPrompt()">Log in to comment</button>`;
     }
     let commentsHtml = '';
     video.comments.forEach(c => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
-    let shareButton = `<button class="btn btn-outline-primary button-animation me-2" onclick="shareVideo('${video.title}')">Share</button>`;
     let videoPage = `
       <div class="row">
         <div class="col-md-8">
@@ -936,7 +995,7 @@ app.get('/video/:id', async (req, res) => {
             Your browser does not support the video tag.
           </video>
           <p>Category: ${video.category}</p>
-          <p>${video.description}</p>
+          <p style="white-space: pre-wrap;">${autoLink(video.description)}</p>
           <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
           ${subscribeButton}
           ${likeBtn} ${dislikeBtn} ${editDelete} ${downloadButton} ${shareButton}
@@ -1119,6 +1178,32 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   }
 });
 
+// ========== SUBSCRIPTIONS PAGE ==========
+app.get('/subscriptions', isAuthenticated, async (req, res) => {
+  try {
+    // Find channels where the current user is a subscriber
+    let subscriptions = await User.find({ subscribers: req.session.userId });
+    let subsHtml = `<h2>Your Subscriptions</h2><div class="row">`;
+    subscriptions.forEach(sub => {
+      subsHtml += `
+        <div class="col-md-3">
+          <div class="card mb-2">
+            <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">
+            <div class="card-body">
+              <h6 class="card-title">${sub.username}</h6>
+              <a href="/profile/${sub._id}" class="btn btn-primary button-animation btn-sm">View Profile</a>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    subsHtml += `</div>`;
+    res.send(renderPage(subsHtml, req));
+  } catch(err) {
+    res.send('Error loading subscriptions.');
+  }
+});
+
 // ========== USER PROFILE ==========
 app.get('/profile/:id', async (req, res) => {
   try {
@@ -1136,7 +1221,7 @@ app.get('/profile/:id', async (req, res) => {
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2">Watch Video</a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch Video</a>
             </div>
           </div>
         </div>
@@ -1150,17 +1235,59 @@ app.get('/profile/:id', async (req, res) => {
     <p>${userProfile.about}</p>
     <p>Subscribers: ${userProfile.subscribers.length}</p>
     `;
-    // If the logged in user is not viewing their own profile, add a subscribe button
-    if(req.session.userId && req.session.userId !== req.params.id) {
-      let isSubscribed = userProfile.subscribers.includes(req.session.userId);
-      profileHtml += `
-      <form method="POST" action="/subscribe/${userProfile._id}" style="display:inline;">
-        <button class="btn btn-info button-animation me-2">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
-      </form>
-      `;
+    if(req.session.userId) {
+      if(req.session.userId !== req.params.id) {
+        let isSubscribed = userProfile.subscribers.includes(req.session.userId);
+        profileHtml += `
+        <form method="POST" action="/subscribe/${userProfile._id}" style="display:inline;">
+          <button class="btn btn-info button-animation me-2" type="submit">${isSubscribed ? 'Unsubscribe' : 'Subscribe'}</button>
+        </form>
+        `;
+      } else {
+        // For own profile, show a subscriptions section
+        let subscriptionsList = await User.find({ subscribers: req.session.userId });
+        if(subscriptionsList.length > 0) {
+          profileHtml += `<h4>Your Subscriptions:</h4><div class="row">`;
+          subscriptionsList.forEach(sub => {
+            profileHtml += `
+              <div class="col-md-3">
+                 <div class="card mb-2">
+                     <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">
+                     <div class="card-body">
+                        <h6 class="card-title">${sub.username}</h6>
+                        <a href="/profile/${sub._id}" class="btn btn-sm btn-primary button-animation">View</a>
+                     </div>
+                 </div>
+              </div>
+            `;
+          });
+          profileHtml += `</div>`;
+        }
+      }
+    } else {
+      profileHtml += `<button class="btn btn-info button-animation me-2" onclick="showLoginPrompt()">Subscribe</button>`;
     }
-    profileHtml += `<h4 class="mt-4">Videos by ${userProfile.username}:</h4>
-                    ${videosHtml}`;
+    
+    // Add Popular Videos (sorted by viewCount) and All Videos sections
+    let popularVideos = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
+    if(popularVideos.length > 0) {
+       profileHtml += `<h4>Popular Videos by ${userProfile.username}:</h4><div class="row">`;
+       popularVideos.forEach(video => {
+         profileHtml += `
+           <div class="col-md-4">
+             <div class="card video-card mb-3">
+               <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" style="max-height:200px; object-fit:cover;">
+               <div class="card-body">
+                  <h5 class="card-title">${video.title}</h5>
+                  <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
+               </div>
+             </div>
+           </div>
+         `;
+       });
+       profileHtml += `</div>`;
+    }
+    profileHtml += `<h4 class="mt-4">All Videos by ${userProfile.username}:</h4>${videosHtml}`;
 
     // Only show profile update form if the user is viewing their own profile
     if(req.session.userId && req.session.userId === req.params.id) {
@@ -1173,7 +1300,6 @@ app.get('/profile/:id', async (req, res) => {
           <input type="file" name="profilePic" accept="image/*" class="form-control-file" id="profilePicInput" />
           <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
         </div>
-        <!-- Background Picture removed as per request -->
         <div class="form-group mb-3">
           <label>About Me:</label>
           <textarea name="about" class="form-control">${userProfile.about}</textarea>
@@ -1207,7 +1333,6 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
       user.profilePic = picResult.secure_url;
       req.session.profilePic = picResult.secure_url;
     }
-    // Background picture update removed as per request
     user.about = req.body.about;
     user.streamKey = req.body.streamKey || '';
     await user.save();
@@ -1317,6 +1442,12 @@ app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
   } catch (err) {
     res.send('Error deleting user.');
   }
+});
+
+// Dummy route for stopping live stream (admin only)
+app.post('/admin/stop/live/:id', isAdmin, async (req, res) => {
+  // This is a placeholder. Actual live stream management would depend on your streaming integration.
+  res.send('Live stream stopped.');
 });
 
 // ================== START SERVER ==================
