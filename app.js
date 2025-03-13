@@ -20,8 +20,11 @@ cloudinary.config({
   api_secret: 'a9TyH_t9lqZvem3cKkYSoXJ_6-E'     // Replace with your Cloudinary API secret
 });
 
-// ================== INITIALIZE APP ==================
+// ================== INITIALIZE APP & SOCKET.IO ==================
 const app = express();
+const http = require('http');
+const server = http.createServer(app);
+const io = require('socket.io')(server);
 const PORT = process.env.PORT || 3000;
 
 // ================== MONGODB CONNECTION ==================
@@ -66,9 +69,7 @@ const userSchema = new mongoose.Schema({
   profilePic:   { type: String, default: '/uploads/profiles/default.png' },
   backgroundPic:{ type: String, default: '/uploads/backgrounds/default.png' },
   about:        { type: String, default: '' },
-  // Live streaming placeholders:
-  isLive:       { type: Boolean, default: false },
-  liveLink:     { type: String, default: '' }
+  streamKey:    { type: String, default: '' } // New field for streaming
 });
 
 const videoSchema = new mongoose.Schema({
@@ -135,7 +136,7 @@ async function isAdmin(req, res, next) {
   }
 }
 
-// ================== HTML RENDERER (WITH SCRIPTS) ==================
+// ================== HTML RENDERER (WITH SCRIPTS & SOCKET.IO) ==================
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -147,8 +148,10 @@ function renderPage(content, req) {
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <!-- Bootstrap 5 -->
       <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-      <!-- Optional: Bootstrap Icons (for a nicer menu toggle icon) -->
+      <!-- Bootstrap Icons -->
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+      <!-- Google Fonts -->
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
           :root {
               --primary: #6366f1;
@@ -162,8 +165,8 @@ function renderPage(content, req) {
               min-height: 100vh;
               display: flex;
               flex-direction: column;
+              transition: background 0.3s ease, color 0.3s ease;
           }
-          /* Dark mode overrides */
           body.dark-mode {
               --primary: #bb86fc;
               --primary-hover: #985eff;
@@ -172,7 +175,7 @@ function renderPage(content, req) {
               background: var(--light);
               color: #e0e0e0;
           }
-          /* Top Navbar */
+          /* Navbar */
           .navbar {
               background: rgba(255, 255, 255, 0.95);
               backdrop-filter: blur(10px);
@@ -181,7 +184,10 @@ function renderPage(content, req) {
           body.dark-mode .navbar {
               background: rgba(18, 18, 18, 0.95);
           }
-          /* Sidebar styling */
+          .navbar .nav-link {
+              margin-left: 10px;
+          }
+          /* Sidebar */
           .sidebar {
               height: calc(100vh - 56px);
               background: var(--light);
@@ -199,12 +205,12 @@ function renderPage(content, req) {
               background: rgba(99, 102, 241, 0.1);
               border-radius: 0.5rem;
           }
-          /* Video card styles */
+          /* Video card */
           .video-card {
               border: 0;
               border-radius: 12px;
               overflow: hidden;
-              transition: transform 0.2s, box-shadow 0.2s;
+              transition: transform 0.3s, box-shadow 0.3s;
               background: white;
           }
           body.dark-mode .video-card {
@@ -225,6 +231,7 @@ function renderPage(content, req) {
               border: none;
               padding: 8px 16px;
               border-radius: 8px;
+              transition: background 0.3s ease;
           }
           .btn-primary:hover {
               background: var(--primary-hover);
@@ -241,13 +248,30 @@ function renderPage(content, req) {
               margin: 1rem 0;
               max-width: 100%;
           }
-          /* Back-to-top button styling */
           #backToTop {
               position: fixed;
               bottom: 20px;
               right: 20px;
               display: none;
               z-index: 100;
+          }
+          /* Notification styling */
+          #notification {
+              display: none;
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: var(--primary);
+              color: #fff;
+              padding: 10px 15px;
+              border-radius: 5px;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+              z-index: 1050;
+              animation: fadein 0.5s;
+          }
+          @keyframes fadein {
+              from { opacity: 0; }
+              to { opacity: 1; }
           }
           /* Responsive adjustments */
           @media (max-width: 767.98px) {
@@ -260,10 +284,9 @@ function renderPage(content, req) {
                   background: var(--light);
                   border-right: 1px solid #dee2e6;
               }
+              .navbar .nav-link { margin-left: 5px; }
           }
       </style>
-      <!-- Add Inter Font -->
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   </head>
   <body>
       <!-- Top Navbar -->
@@ -281,13 +304,19 @@ function renderPage(content, req) {
                       <button class="btn btn-outline-success ms-2" type="submit">Search</button>
                   </form>
                   <button class="btn btn-secondary me-2" id="darkModeToggle">Toggle Dark Mode</button>
-                  ${req.session.userId
-                    ? `<a class="nav-link" href="/logout">Logout (${username})</a>`
+                  ${
+                    req.session.userId
+                    ? `<a href="/profile/${req.session.userId}" class="nav-link">
+                           <img src="${req.session.profilePic || '/uploads/profiles/default.png'}" alt="Profile" style="width:40px; height:40px; border-radius:50%;">
+                       </a>`
                     : `<a class="nav-link" href="/login">Login</a>
-                       <a class="nav-link" href="/signup">Sign Up</a>`}
+                       <a class="nav-link" href="/signup">Sign Up</a>`
+                  }
               </div>
           </div>
       </nav>
+      
+      <div id="notification"></div>
       
       <div class="container-fluid">
           <div class="row">
@@ -300,11 +329,12 @@ function renderPage(content, req) {
                           <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
                           <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
                           <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/live">Live</a></li>
-                          ${ req.session.userId
-                              ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                                 <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
-                              : '' }
+                          ${
+                            req.session.userId
+                            ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
+                               <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>`
+                            : ''
+                          }
                           ${ isAdminUser ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
                       </ul>
                   </div>
@@ -320,7 +350,6 @@ function renderPage(content, req) {
           <div class="container">
               <p class="mb-0">By Villamor Gelera</p>
               <div class="mt-2">
-                  <!-- Social icons (if needed) -->
                   <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/facebook-new.png"/></a>
                   <a href="#" class="me-2"><img src="https://img.icons8.com/ios-filled/24/ffffff/twitter.png"/></a>
                   <a href="#"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png"/></a>
@@ -328,13 +357,22 @@ function renderPage(content, req) {
           </div>
       </footer>
   
-      <!-- Back-to-Top Button -->
       <button id="backToTop" class="btn btn-primary">Top</button>
   
       <!-- Bootstrap 5 JS -->
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  
+      <!-- Socket.io -->
+      <script src="/socket.io/socket.io.js"></script>
       <script>
+        // Socket.io notification listener
+        var socket = io();
+        socket.on('notification', function(message) {
+          var notif = document.getElementById('notification');
+          notif.innerText = message;
+          notif.style.display = 'block';
+          setTimeout(function() { notif.style.display = 'none'; }, 3000);
+        });
+
         // Thumbnail preview with mini autoplay on hover:
         document.querySelectorAll('.video-thumbnail').forEach(img => {
           img.addEventListener('mouseenter', function() {
@@ -352,7 +390,7 @@ function renderPage(content, req) {
           });
         });
   
-        // Preview images (profile pic, background pic, thumbnail) before uploading
+        // Preview images before uploading
         function setupPreview(inputId, previewId) {
           const inputEl = document.getElementById(inputId);
           const previewEl = document.getElementById(previewId);
@@ -374,15 +412,14 @@ function renderPage(content, req) {
         setupPreview('backgroundPicInput', 'backgroundPicPreview');
         setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
   
-        // "Share" button using the Web Share API
+        // Web Share API for sharing video
         function shareVideo(title) {
           if (navigator.share) {
             navigator.share({
               title: title,
               text: 'Check out this video on Baho ng Lahat!',
               url: window.location.href
-            })
-            .catch(err => console.log('Share canceled or failed: ', err));
+            }).catch(err => console.log('Share canceled or failed: ', err));
           } else {
             alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
           }
@@ -397,11 +434,7 @@ function renderPage(content, req) {
         // Back-to-top button
         const backToTopBtn = document.getElementById('backToTop');
         window.addEventListener('scroll', () => {
-          if (window.scrollY > 300) {
-            backToTopBtn.style.display = 'block';
-          } else {
-            backToTopBtn.style.display = 'none';
-          }
+          backToTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
         });
         backToTopBtn.addEventListener('click', () => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -422,14 +455,13 @@ function renderPage(content, req) {
 }
 
 // ========== HOME PAGE: LATEST, POPULAR & TRENDING ==========
+// (Remaining routes are largely similar but with minor UI adjustments)
+// --- Home Route ---
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
-    // Sort for latest videos (by uploadDate descending)
     let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
-    // Sort for popular videos (by likes descending)
     let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
-    // Sort for trending videos (by viewCount descending)
     let trendingVideos = [...allVideos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 5);
 
     let latestHtml = '<h3>Latest Videos</h3><div class="row">';
@@ -438,8 +470,7 @@ app.get('/', async (req, res) => {
       <div class="col-md-4">
         <div class="card video-card mb-3">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
                style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
@@ -459,8 +490,7 @@ app.get('/', async (req, res) => {
       <div class="col-md-4">
         <div class="card video-card mb-3">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
                style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
@@ -480,8 +510,7 @@ app.get('/', async (req, res) => {
       <div class="col-md-4">
         <div class="card video-card mb-3">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="card-img-top video-thumbnail"
-               data-video="${video.filePath}"
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
                style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
@@ -504,6 +533,7 @@ app.get('/', async (req, res) => {
 });
 
 // ========== SEARCH ROUTE ==========
+// (No major changes; similar improvements apply)
 app.get('/search', async (req, res) => {
   const q = req.query.query || '';
   try {
@@ -524,8 +554,7 @@ app.get('/search', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -554,8 +583,7 @@ app.get('/music', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -582,8 +610,7 @@ app.get('/gaming', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -610,8 +637,7 @@ app.get('/news', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -638,8 +664,7 @@ app.get('/general', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -657,39 +682,7 @@ app.get('/general', async (req, res) => {
   }
 });
 
-// ========== LIVE PAGE ==========
-app.get('/live', async (req, res) => {
-  try {
-    let liveUsers = await User.find({ isLive: true });
-    let liveHtml = '<h2>Live Streams</h2>';
-    if (liveUsers.length === 0) {
-      liveHtml += '<p>No one is live right now.</p>';
-    } else {
-      liveUsers.forEach(u => {
-        liveHtml += `
-          <div class="card mb-3">
-            <div class="card-body">
-              <h4>${u.username} ${u.verified ? '<span class="badge">Verified</span>' : ''}</h4>
-              <p>${u.about}</p>
-              ${
-                u.liveLink
-                  ? `<iframe src="${u.liveLink}" width="560" height="315" allowfullscreen></iframe>`
-                  : '<p>(No live link provided)</p>'
-              }
-            </div>
-          </div>
-        `;
-      });
-    }
-    res.send(renderPage(liveHtml, req));
-  } catch (err) {
-    console.error('Error in /live route:', err);
-    res.send('Error loading live page.');
-  }
-});
-
 // ========== AUTHENTICATION ==========
-
 // Signup
 app.get('/signup', (req, res) => {
   const form = `
@@ -752,6 +745,7 @@ app.post('/login', async (req, res) => {
     req.session.userId   = user._id.toString();
     req.session.username = user.username;
     req.session.isAdmin  = user.isAdmin;
+    req.session.profilePic = user.profilePic;
     res.redirect('/');
   } catch (err) {
     console.error('Login error:', err);
@@ -766,8 +760,7 @@ app.get('/logout', (req, res) => {
 });
 
 // ========== VIDEO ROUTES ==========
-
-// Upload Video (GET form)
+// Upload Video (GET)
 app.get('/upload', isAuthenticated, (req, res) => {
   const form = `
   <h2>Upload Video</h2>
@@ -804,20 +797,18 @@ app.get('/upload', isAuthenticated, (req, res) => {
   res.send(renderPage(form, req));
 });
 
-// Upload Video (POST handling) using Cloudinary
+// Upload Video (POST)
 app.post('/upload', isAuthenticated, async (req, res) => {
   try {
     if (!req.files || !req.files.videoFile) {
       return res.send('No video file uploaded.');
     }
     let videoFile = req.files.videoFile;
-    // Upload video to Cloudinary as a video resource
     let videoResult = await cloudinary.uploader.upload(videoFile.tempFilePath, {
       resource_type: 'video',
       folder: 'videos'
     });
     let filePath = videoResult.secure_url;
-
     let thumbnailPath;
     if (req.files.thumbnailFile) {
       let thumbFile = req.files.thumbnailFile;
@@ -833,7 +824,6 @@ app.post('/upload', isAuthenticated, async (req, res) => {
         transformation: [{ width: 320, height: 240, crop: 'fill' }]
       });
     }
-
     let newVideo = new Video({
       title:       req.body.title,
       description: req.body.description,
@@ -843,6 +833,8 @@ app.post('/upload', isAuthenticated, async (req, res) => {
       owner:       req.session.userId
     });
     await newVideo.save();
+    // Emit a real-time notification
+    io.emit('notification', 'New video uploaded!');
     res.redirect('/');
   } catch (err) {
     console.error('Upload error:', err);
@@ -855,25 +847,19 @@ app.get('/video/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
     if (!video) return res.send('Video not found.');
-
-    // Increment view count
-    video.viewCount = video.viewCount + 1;
+    video.viewCount++;
     await video.save();
-
-    // SUGGESTED videos: same category, exclude current
     let suggested = await Video.find({
       category: video.category,
       _id: { $ne: video._id }
     }).limit(5);
-
     let suggestedHtml = '';
     suggested.forEach(sv => {
       suggestedHtml += `
       <div class="card mb-2">
         <div class="card-body p-2">
           <img src="${sv.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${sv.filePath}"
+               class="video-thumbnail" data-video="${sv.filePath}"
                style="width:100%; max-height:100px; object-fit:cover;">
           <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
           <a href="/video/${sv._id}" class="btn btn-sm btn-primary">Watch</a>
@@ -881,7 +867,6 @@ app.get('/video/:id', async (req, res) => {
       </div>
       `;
     });
-
     let subscribeButton = '';
     if (req.session.userId && req.session.userId !== video.owner._id.toString()) {
       let isSubscribed = video.owner.subscribers.includes(req.session.userId);
@@ -891,11 +876,7 @@ app.get('/video/:id', async (req, res) => {
       </form>
       `;
     }
-
-    let downloadButton = `
-      <a href="/download/${video._id}" class="btn btn-secondary">Download</a>
-    `;
-
+    let downloadButton = `<a href="/download/${video._id}" class="btn btn-secondary">Download</a>`;
     let likeBtn = '';
     let dislikeBtn = '';
     let editDelete = '';
@@ -926,16 +907,11 @@ app.get('/video/:id', async (req, res) => {
         `;
       }
     }
-
     let commentsHtml = '';
     video.comments.forEach(c => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
-
-    let shareButton = `
-      <button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>
-    `;
-
+    let shareButton = `<button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')">Share</button>`;
     let videoPage = `
       <div class="row">
         <div class="col-md-8">
@@ -1010,6 +986,8 @@ app.post('/comment/:id', isAuthenticated, async (req, res) => {
     if (!video) return res.send('Video not found.');
     video.comments.push({ user: req.session.userId, comment: req.body.comment });
     await video.save();
+    // Emit notification for new comment
+    io.emit('notification', 'New comment added!');
     res.redirect('/video/' + req.params.id);
   } catch (err) {
     res.send('Error commenting on video.');
@@ -1064,7 +1042,6 @@ app.post('/edit/:id', isAuthenticated, async (req, res) => {
     video.title       = req.body.title;
     video.description = req.body.description;
     video.category    = req.body.category || 'General';
-
     if (req.files && req.files.thumbnailFile) {
       let thumbFile = req.files.thumbnailFile;
       let thumbUploadPath = path.join(__dirname, 'uploads', 'thumbnails', Date.now() + '-' + thumbFile.name);
@@ -1127,7 +1104,7 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   }
 });
 
-// ========== USER PROFILE ==========
+// ========== USER PROFILE ========== 
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
@@ -1139,8 +1116,7 @@ app.get('/profile/:id', async (req, res) => {
         <div class="col-md-4">
           <div class="card video-card mb-3">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="card-img-top video-thumbnail"
-                 data-video="${video.filePath}"
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
                  style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
@@ -1153,23 +1129,11 @@ app.get('/profile/:id', async (req, res) => {
     });
     videosHtml += '</div>';
 
-    let liveSection = '';
-    if (userProfile.isLive) {
-      liveSection = `
-      <div class="alert alert-success mt-3">
-        <strong>${userProfile.username} is LIVE!</strong><br>
-        ${userProfile.liveLink
-          ? `<iframe src="${userProfile.liveLink}" width="560" height="315" allowfullscreen></iframe>`
-          : '(No live link provided)'}
-      </div>`;
-    }
-
     let profileHtml = `
     <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge">Verified</span>' : ''}</h2>
-    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover;">
+    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover; border-radius:50%;">
     <p>${userProfile.about}</p>
     <p>Subscribers: ${userProfile.subscribers.length}</p>
-    ${liveSection}
     <h4 class="mt-4">Videos by ${userProfile.username}:</h4>
     ${videosHtml}
     `;
@@ -1193,24 +1157,11 @@ app.get('/profile/:id', async (req, res) => {
           <label>About Me:</label>
           <textarea name="about" class="form-control">${userProfile.about}</textarea>
         </div>
-        <button type="submit" class="btn btn-primary">Update Profile</button>
-      </form>
-      <hr>
-      <h3>Live Stream Settings</h3>
-      <p>Current status: ${userProfile.isLive ? 'LIVE' : 'Offline'}</p>
-      <form method="POST" action="/setLiveLink">
         <div class="form-group">
-          <label>Live Embed Link (e.g., YouTube embed URL):</label>
-          <input type="text" name="liveLink" class="form-control" value="${userProfile.liveLink}" />
+          <label>Stream Key (for streaming):</label>
+          <input type="text" name="streamKey" class="form-control" value="${userProfile.streamKey}" placeholder="Enter your stream key here" />
         </div>
-        <button type="submit" class="btn btn-info">Save Live Link</button>
-      </form>
-      <br>
-      <form method="POST" action="/goLive">
-        <button type="submit" class="btn btn-success" ${userProfile.isLive ? 'disabled' : ''}>Go Live</button>
-      </form>
-      <form method="POST" action="/stopLive" style="margin-top:5px;">
-        <button type="submit" class="btn btn-danger" ${userProfile.isLive ? '' : 'disabled'}>Stop Live</button>
+        <button type="submit" class="btn btn-primary">Update Profile</button>
       </form>
       `;
     }
@@ -1221,7 +1172,7 @@ app.get('/profile/:id', async (req, res) => {
   }
 });
 
-// Update Profile (Using Cloudinary for image uploads)
+// Update Profile (including Stream Key)
 app.post('/updateProfile', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1233,6 +1184,7 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
         folder: 'profiles'
       });
       user.profilePic = picResult.secure_url;
+      req.session.profilePic = picResult.secure_url;
     }
     if(req.files && req.files.backgroundPic) {
       let bg = req.files.backgroundPic;
@@ -1243,48 +1195,12 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
       user.backgroundPic = bgResult.secure_url;
     }
     user.about = req.body.about;
+    user.streamKey = req.body.streamKey || '';
     await user.save();
     res.redirect('/profile/' + req.session.userId);
   } catch (err) {
     console.error('Profile update error:', err);
     res.send('Error updating profile.');
-  }
-});
-
-// ========== LIVE STREAM ACTIONS ==========
-app.post('/setLiveLink', isAuthenticated, async (req, res) => {
-  try {
-    let user = await User.findById(req.session.userId);
-    if(!user) return res.send('User not found.');
-    user.liveLink = req.body.liveLink;
-    await user.save();
-    res.redirect('/profile/' + user._id);
-  } catch (err) {
-    res.send('Error saving live link.');
-  }
-});
-
-app.post('/goLive', isAuthenticated, async (req, res) => {
-  try {
-    let user = await User.findById(req.session.userId);
-    if(!user) return res.send('User not found.');
-    user.isLive = true;
-    await user.save();
-    res.redirect('/profile/' + user._id);
-  } catch (err) {
-    res.send('Error going live.');
-  }
-});
-
-app.post('/stopLive', isAuthenticated, async (req, res) => {
-  try {
-    let user = await User.findById(req.session.userId);
-    if(!user) return res.send('User not found.');
-    user.isLive = false;
-    await user.save();
-    res.redirect('/profile/' + user._id);
-  } catch (err) {
-    res.send('Error stopping live.');
   }
 });
 
@@ -1302,6 +1218,9 @@ app.get('/admin', isAdmin, async (req, res) => {
                user._id.toString() !== req.session.userId
                  ? `<form style="display:inline;" method="POST" action="/ban/${user._id}">
                       <button class="btn btn-danger btn-sm ml-2">Ban/Unban</button>
+                    </form>
+                    <form style="display:inline;" method="POST" action="/admin/delete/user/${user._id}">
+                      <button class="btn btn-danger btn-sm ml-2">Delete Account</button>
                     </form>`
                  : ''
              }
@@ -1317,7 +1236,22 @@ app.get('/admin', isAdmin, async (req, res) => {
       </div>
       `;
     });
-    res.send(renderPage(userHtml, req));
+    let videos = await Video.find({}).populate('owner');
+    let videoHtml = '<h2 class="mt-4">Admin Panel - Manage Videos</h2>';
+    videos.forEach(video => {
+      videoHtml += `
+      <div class="card mb-2">
+        <div class="card-body">
+          <p>${video.title} by ${video.owner.username}
+             <form style="display:inline;" method="POST" action="/admin/delete/video/${video._id}">
+                <button class="btn btn-danger btn-sm ml-2">Delete Video</button>
+             </form>
+          </p>
+        </div>
+      </div>
+      `;
+    });
+    res.send(renderPage(userHtml + videoHtml, req));
   } catch (err) {
     console.error('Admin panel error:', err);
     res.send('Internal server error in admin panel.');
@@ -1348,7 +1282,30 @@ app.post('/verify/:id', isAdmin, async (req, res) => {
   }
 });
 
+app.post('/admin/delete/video/:id', isAdmin, async (req, res) => {
+  try {
+    let video = await Video.findById(req.params.id);
+    if (!video) return res.send('Video not found.');
+    fs.unlink(path.join(__dirname, video.filePath), err => { if(err) console.log(err); });
+    await Video.deleteOne({ _id: req.params.id });
+    res.redirect('/admin');
+  } catch (err) {
+    res.send('Error deleting video.');
+  }
+});
+
+app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
+  try {
+    let user = await User.findById(req.params.id);
+    if (!user) return res.send('User not found.');
+    await User.deleteOne({ _id: req.params.id });
+    res.redirect('/admin');
+  } catch (err) {
+    res.send('Error deleting user.');
+  }
+});
+
 // ================== START SERVER ==================
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
 });
