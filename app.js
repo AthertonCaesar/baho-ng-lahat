@@ -167,8 +167,6 @@ function autoLink(text) {
 
 // ================== HTML RENDERER (WITH SCRIPTS & SOCKET.IO) ==================
 function renderPage(content, req) {
-  const isAdminUser = req.session.isAdmin || false;
-  const username    = req.session.username || '';
   return `
   <!DOCTYPE html>
   <html>
@@ -195,8 +193,8 @@ function renderPage(content, req) {
               display: flex;
               flex-direction: column;
               transition: background 0.3s ease, color 0.3s ease;
-              margin: 0; /* remove default margin */
-              padding: 0; /* remove default padding */
+              margin: 0;
+              padding: 0;
           }
           /* Navbar */
           .navbar {
@@ -263,7 +261,6 @@ function renderPage(content, req) {
               margin-top: auto;
               padding: 2rem 0;
           }
-          /* Remove any outline/blue line for the footer links */
           footer a {
               border: none;
               outline: none;
@@ -382,7 +379,8 @@ function renderPage(content, req) {
       <nav class="navbar navbar-expand-lg sticky-top">
           <div class="container-fluid">
               <div class="d-flex align-items-center">
-                  <button class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
+                  <!-- Use type="button" to prevent accidental form submission -->
+                  <button type="button" class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
                       <i class="bi bi-list"></i> Menu
                   </button>
                   <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
@@ -536,7 +534,7 @@ function renderPage(content, req) {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
-        // Sidebar toggle for mobile devices with slide-in animation
+        // Sidebar toggle for mobile devices
         const sidebarToggle = document.getElementById('sidebarToggle');
         const sidebar = document.getElementById('sidebar');
         if(sidebarToggle) {
@@ -1510,6 +1508,7 @@ app.get('/profile/:id', async (req, res) => {
         <button type="submit" class="btn btn-primary button-animation">Update Profile</button>
       </form>
       `;
+
       // Show warnings if user has any
       if (userProfile.warnings && userProfile.warnings.length > 0) {
         profileHtml += `<hr><h4>Your Warnings from Admin:</h4>`;
