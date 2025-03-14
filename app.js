@@ -61,14 +61,14 @@ dirs.forEach(dir => {
 // ================== MONGOOSE SCHEMAS ==================
 const userSchema = new mongoose.Schema({
   username:      { type: String, unique: true },
-  email:         { type: String, required: true },
+  // Removed required:true to avoid validation issues when updating profile if email is missing
+  email:         { type: String, default: '' },
   password:      String,
   isAdmin:       { type: Boolean, default: false },
   banned:        { type: Boolean, default: false },
   verified:      { type: Boolean, default: false },
   subscribers:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
-  // Removed the old placeholder; set empty default
   profilePic:    { type: String, default: '' },
   backgroundPic: { type: String, default: '' },
   about:         { type: String, default: '' },
@@ -99,7 +99,6 @@ const videoSchema = new mongoose.Schema({
       date:    { type: Date, default: Date.now }
     }
   ],
-  // A simple "Report" feature
   reports: [
     {
       user:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
