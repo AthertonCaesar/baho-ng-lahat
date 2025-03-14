@@ -43,7 +43,7 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// Serve static files (for any local uploads if you still use them)
+// Serve static files (for uploaded videos, profiles, backgrounds, thumbnails)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Create required directories if they do not exist
@@ -60,21 +60,21 @@ dirs.forEach(dir => {
 
 // ================== MONGOOSE SCHEMAS ==================
 const userSchema = new mongoose.Schema({
-  username:      { type: String, unique: true },
-  // Removed required:true to avoid validation issues when updating profile if email is missing
-  email:         { type: String, default: '' },
+  username:      { type: String, unique: true }, 
+  email:         { type: String, required: true },
   password:      String,
   isAdmin:       { type: Boolean, default: false },
   banned:        { type: Boolean, default: false },
   verified:      { type: Boolean, default: false },
   subscribers:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-
-  profilePic:    { type: String, default: '' },
-  backgroundPic: { type: String, default: '' },
+  profilePic:    { 
+    type: String, 
+    default: 'https://via.placeholder.com/150/ffffff/000000?text=No+Pic' 
+  },
+  backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
   about:         { type: String, default: '' },
   streamKey:     { type: String, default: '' },
-
-  // Warnings from admin
+  // New: warnings from admin
   warnings: [
     {
       message: String,
@@ -87,7 +87,7 @@ const videoSchema = new mongoose.Schema({
   title:        String,
   description:  String,
   filePath:     String,
-  thumbnail:    { type: String, default: '' },
+  thumbnail:    { type: String, default: '/uploads/thumbnails/default.png' },
   category:     { type: String, default: 'General' },
   owner:        { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   likes:        [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -99,6 +99,7 @@ const videoSchema = new mongoose.Schema({
       date:    { type: Date, default: Date.now }
     }
   ],
+  // A simple "Report" feature
   reports: [
     {
       user:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -165,7 +166,6 @@ function autoLink(text) {
 }
 
 // ================== HTML RENDERER (WITH SCRIPTS & SOCKET.IO) ==================
-// Overhauled the CSS to a more modern look, including a better mobile sidebar overlay.
 function renderPage(content, req) {
   const isAdminUser = req.session.isAdmin || false;
   const username    = req.session.username || '';
@@ -183,10 +183,10 @@ function renderPage(content, req) {
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
           :root {
-              --primary: #0d6efd; /* A more standard Bootstrap-like blue */
-              --primary-hover: #0b5ed7;
-              --dark: #212529;
-              --light: #f8f9fa;
+              --primary: #00adb5;
+              --primary-hover: #00838f;
+              --dark: #222831;
+              --light: #eeeeee;
           }
           body {
               background: var(--light);
@@ -194,69 +194,46 @@ function renderPage(content, req) {
               min-height: 100vh;
               display: flex;
               flex-direction: column;
-              margin: 0;
-              padding: 0;
+              transition: background 0.3s ease, color 0.3s ease;
+              margin: 0; /* remove default margin */
+              padding: 0; /* remove default padding */
           }
           /* Navbar */
           .navbar {
-              background: #fff;
-              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+              background: rgba(255, 255, 255, 0.95);
+              backdrop-filter: blur(10px);
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
               z-index: 999;
           }
           .navbar .nav-link {
               margin-left: 10px;
           }
-
           /* Sidebar */
-          #sidebar {
-              background: #fff;
+          .sidebar {
+              background: var(--light);
               border-right: 1px solid #dee2e6;
               padding-top: 1rem;
-              position: fixed;
-              top: 56px;
-              left: 0;
-              width: 220px;
-              height: calc(100% - 56px);
-              transform: translateX(-100%);
               transition: transform 0.3s ease;
-              z-index: 9999; /* Ensure it's on top */
-              overflow-y: auto;
-              box-shadow: 0 0 10px rgba(0,0,0,0.1);
-          }
-          #sidebar.show {
-              transform: translateX(0);
           }
           .sidebar .nav-link {
               font-weight: 500;
               color: var(--dark);
               margin-bottom: 0.5rem;
               padding: 0.5rem 1rem;
+              animation: fadeIn 0.5s ease-in-out;
           }
           .sidebar .nav-link:hover {
               color: var(--primary);
-              background: rgba(13, 110, 253, 0.1);
+              background: rgba(0, 173, 181, 0.1);
               border-radius: 0.5rem;
           }
-
-          /* Main content area gets margin-left on desktop */
-          @media (min-width: 992px) {
-            #sidebar {
-              position: relative;
-              transform: none;
-              width: 220px;
-            }
-            main {
-              margin-left: 220px;
-            }
-          }
-
           /* Video card */
           .video-card {
               border: 0;
               border-radius: 12px;
               overflow: hidden;
               transition: transform 0.3s, box-shadow 0.3s;
-              background: #fff;
+              background: white;
               margin-bottom: 1rem;
           }
           .video-card:hover {
@@ -280,16 +257,21 @@ function renderPage(content, req) {
           .btn-primary:hover {
               background: var(--primary-hover);
           }
-
           footer {
               background: var(--dark);
-              color: #fff;
+              color: white;
               margin-top: auto;
               padding: 2rem 0;
           }
+          /* Remove any outline/blue line for the footer links */
           footer a {
+              border: none;
+              outline: none;
               text-decoration: none !important;
               color: #fff !important;
+          }
+          footer a:focus, footer a:active {
+              outline: none;
           }
           footer a img {
               filter: brightness(0) invert(1);
@@ -301,7 +283,6 @@ function renderPage(content, req) {
               max-width: 100%;
               transition: opacity 0.5s ease;
               border: none !important;
-              display: none;
           }
           #backToTop {
               position: fixed;
@@ -355,6 +336,42 @@ function renderPage(content, req) {
               from { opacity: 0; transform: translateY(20px); }
               to { opacity: 1; transform: translateY(0); }
           }
+          /* Desktop layout */
+          @media (min-width: 768px) {
+              #sidebar {
+                  position: relative;
+                  width: 220px;
+                  min-height: calc(100vh - 56px);
+                  float: left;
+              }
+              main {
+                  margin-left: 220px; 
+              }
+          }
+          /* Mobile layout */
+          @media (max-width: 767.98px) {
+              #sidebar {
+                  position: fixed;
+                  z-index: 1050;
+                  width: 200px;
+                  left: 0;
+                  top: 56px;
+                  height: calc(100% - 56px);
+                  overflow-y: auto;
+                  transform: translateX(-100%);
+              }
+              .sidebar.show {
+                  transform: translateX(0);
+              }
+              .navbar .nav-link { margin-left: 5px; }
+          }
+          @keyframes slideIn {
+              from { transform: translateX(-100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+          }
+          .slide-in {
+              animation: slideIn 0.3s forwards;
+          }
           img {
               border: none !important;
           }
@@ -365,7 +382,7 @@ function renderPage(content, req) {
       <nav class="navbar navbar-expand-lg sticky-top">
           <div class="container-fluid">
               <div class="d-flex align-items-center">
-                  <button class="btn btn-outline-secondary d-lg-none me-2" id="sidebarToggle">
+                  <button class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
                       <i class="bi bi-list"></i> Menu
                   </button>
                   <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
@@ -391,32 +408,37 @@ function renderPage(content, req) {
 
       <div id="notification"></div>
 
-      <!-- Sidebar Navigation -->
-      <nav id="sidebar" class="sidebar">
-          <ul class="nav flex-column">
-              <li class="nav-item"><a class="nav-link button-animation" href="/">Home</a></li>
-              <li class="nav-item"><a class="nav-link button-animation" href="/music">Music</a></li>
-              <li class="nav-item"><a class="nav-link button-animation" href="/gaming">Gaming</a></li>
-              <li class="nav-item"><a class="nav-link button-animation" href="/news">News</a></li>
-              <li class="nav-item"><a class="nav-link button-animation" href="/general">General</a></li>
-              ${
-                req.session.userId
-                ? `
-                   <li class="nav-item"><a class="nav-link button-animation" href="/upload">Upload Video</a></li>
-                   <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>
-                   <li class="nav-item"><a class="nav-link button-animation" href="/subscriptions">Subscriptions</a></li>
-                   <li class="nav-item"><a class="nav-link button-animation" href="/logout">Logout</a></li>
-                  `
-                : ''
-              }
-              ${ req.session.isAdmin ? `<li class="nav-item"><a class="nav-link button-animation" href="/admin">Admin Panel</a></li>` : '' }
-          </ul>
-      </nav>
-
-      <!-- Main Content -->
-      <main class="container-fluid mt-3">
-          ${content}
-      </main>
+      <div class="container-fluid">
+          <div class="row">
+              <!-- Sidebar Navigation -->
+              <nav id="sidebar" class="col-md-2 sidebar">
+                  <div class="position-sticky">
+                      <ul class="nav flex-column">
+                          <li class="nav-item"><a class="nav-link button-animation" href="/">Home</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/music">Music</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/gaming">Gaming</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/news">News</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/general">General</a></li>
+                          ${
+                            req.session.userId
+                            ? `
+                               <li class="nav-item"><a class="nav-link button-animation" href="/upload">Upload Video</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/subscriptions">Subscriptions</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/logout">Logout</a></li>
+                              `
+                            : ''
+                          }
+                          ${ req.session.isAdmin ? `<li class="nav-item"><a class="nav-link button-animation" href="/admin">Admin Panel</a></li>` : '' }
+                      </ul>
+                  </div>
+              </nav>
+              <!-- Main Content -->
+              <main class="col-md-10 ms-sm-auto px-4">
+                  ${content}
+              </main>
+          </div>
+      </div>
 
       <footer class="text-center">
           <div class="container">
@@ -470,6 +492,7 @@ function renderPage(content, req) {
           const inputEl = document.getElementById(inputId);
           const previewEl = document.getElementById(previewId);
           if (!inputEl || !previewEl) return;
+          previewEl.style.display = 'none';
           inputEl.addEventListener('change', function() {
             const file = this.files[0];
             if (file) {
@@ -513,7 +536,7 @@ function renderPage(content, req) {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
-        // Sidebar toggle for mobile devices
+        // Sidebar toggle for mobile devices with slide-in animation
         const sidebarToggle = document.getElementById('sidebarToggle');
         const sidebar = document.getElementById('sidebar');
         if(sidebarToggle) {
@@ -544,6 +567,7 @@ function renderPage(content, req) {
 }
 
 // ========== HOME PAGE: LATEST, POPULAR & TRENDING ==========
+// --- Home Route ---
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
@@ -919,7 +943,7 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     });
     let filePath = videoResult.secure_url;
 
-    let thumbnailPath = '';
+    let thumbnailPath;
     if (req.files.thumbnailFile) {
       let thumbFile = req.files.thumbnailFile;
       let thumbResult = await cloudinary.uploader.upload(thumbFile.tempFilePath, {
@@ -1117,10 +1141,10 @@ app.get('/video/:id', async (req, res) => {
           <p style="white-space: pre-wrap;">${autoLink(video.description)}</p>
           <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
           ${subscribeButton}
-          ${likeBtn}
-          ${dislikeBtn}
-          ${editDelete}
-          ${downloadButton}
+          ${likeBtn} 
+          ${dislikeBtn} 
+          ${editDelete} 
+          ${downloadButton} 
           ${shareButton}
           <hr>
           <h4>Comments</h4>
@@ -1294,7 +1318,7 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
     if (!video) return res.send('Video not found.');
     if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
 
-    // If you want to delete from Cloudinary, do so here.
+    // If you want to delete from Cloudinary, you'd do it here.
     await Video.deleteOne({ _id: req.params.id });
     res.redirect('/');
   } catch (err) {
@@ -1353,11 +1377,7 @@ app.get('/subscriptions', isAuthenticated, async (req, res) => {
       subsHtml += `
         <div class="col-md-3">
           <div class="card mb-2">
-            ${
-              sub.profilePic
-              ? `<img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">`
-              : ''
-            }
+            <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover; border:none;">
             <div class="card-body">
               <h6 class="card-title">${sub.username}</h6>
               <a href="/profile/${sub._id}" class="btn btn-primary button-animation btn-sm">View Profile</a>
@@ -1380,16 +1400,6 @@ app.get('/profile/:id', async (req, res) => {
     if (!userProfile) return res.send('User not found.');
     let videos = await Video.find({ owner: req.params.id });
 
-    // Only show the profile pic if set
-    let profilePicHtml = '';
-    if (userProfile.profilePic) {
-      profilePicHtml = `
-        <img src="${userProfile.profilePic}" 
-             alt="Profile Picture" 
-             style="width:150px;height:150px;object-fit:cover;border-radius:50%;border:none;">
-      `;
-    }
-
     let videosHtml = '<div class="row">';
     videos.forEach(video => {
       videosHtml += `
@@ -1410,10 +1420,10 @@ app.get('/profile/:id', async (req, res) => {
     videosHtml += '</div>';
 
     let profileHtml = `
-      <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
-      ${profilePicHtml}
-      <p>${userProfile.about}</p>
-      <p>Subscribers: ${userProfile.subscribers.length}</p>
+    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
+    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover; border-radius:50%; border:none;">
+    <p>${userProfile.about}</p>
+    <p>Subscribers: ${userProfile.subscribers.length}</p>
     `;
 
     // If the current user is logged in
@@ -1437,11 +1447,7 @@ app.get('/profile/:id', async (req, res) => {
             profileHtml += `
               <div class="col-md-3">
                 <div class="card mb-2">
-                  ${
-                    sub.profilePic
-                    ? `<img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">`
-                    : ''
-                  }
+                  <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover; border:none;">
                   <div class="card-body">
                     <h6 class="card-title">${sub.username}</h6>
                     <a href="/profile/${sub._id}" class="btn btn-sm btn-primary button-animation">View</a>
