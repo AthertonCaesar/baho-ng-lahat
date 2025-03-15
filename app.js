@@ -73,8 +73,7 @@ const userSchema = new mongoose.Schema({
   },
   backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
   about:         { type: String, default: '' },
-  streamKey:     { type: String, default: '' },
-  // New: warnings from admin
+  streamKey:     { type: String, default: '' }, // (Retained in the schema but no longer exposed in UI)
   warnings: [
     {
       message: String,
@@ -99,7 +98,6 @@ const videoSchema = new mongoose.Schema({
       date:    { type: Date, default: Date.now }
     }
   ],
-  // A simple "Report" feature
   reports: [
     {
       user:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -117,14 +115,13 @@ const Video = mongoose.model('Video', videoSchema);
 // ================== CREATE DEFAULT ADMIN ==================
 async function createDefaultAdmin() {
   try {
-    // We'll store the admin username in lowercase to match the login check.
     const adminUsername = 'villamor gelera';
     let admin = await User.findOne({ username: adminUsername });
     if (!admin) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
       admin = new User({
         username: adminUsername,
-        email: 'admin@example.com', // Hardcode an email for the default admin
+        email: 'admin@example.com',
         password: hashedPassword,
         isAdmin: true,
         verified: true
@@ -379,19 +376,16 @@ function renderPage(content, req) {
       <nav class="navbar navbar-expand-lg sticky-top">
           <div class="container-fluid">
               <div class="d-flex align-items-center">
-                  <!-- Use type="button" to prevent accidental form submission -->
                   <button type="button" class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
                       <i class="bi bi-list"></i> Menu
                   </button>
                   <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
               </div>
               <div class="d-flex align-items-center">
-                  <!-- Search Bar -->
                   <form class="d-flex me-2" action="/search" method="GET">
                       <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
                       <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
                   </form>
-                  <!-- If not logged in, show login/signup -->
                   ${
                     req.session.userId
                     ? ''
@@ -542,15 +536,37 @@ function renderPage(content, req) {
             sidebar.classList.toggle('show');
           });
         }
+        // Close sidebar when a link is clicked on mobile devices
+        document.querySelectorAll('#sidebar .nav-link').forEach(link => {
+          link.addEventListener('click', () => {
+            if(window.innerWidth < 768) {
+              sidebar.classList.remove('show');
+            }
+          });
+        });
 
-        // Video quality dropdown listener (if present)
+        // Video quality dropdown listener with URL transformation (for Cloudinary)
         const qualityDropdown = document.getElementById('videoQuality');
         if(qualityDropdown) {
           qualityDropdown.addEventListener('change', function() {
             let quality = this.value;
-            let videoPlayer = document.querySelector('video');
-            // Dummy implementation; update video source in production
-            console.log('Video quality changed to ' + quality + 'p');
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (!videoPlayer) return;
+            let currentTime = videoPlayer.currentTime;
+            let originalSrc = videoPlayer.getAttribute('data-original-src');
+            if (!originalSrc) {
+              originalSrc = videoPlayer.querySelector('source').src;
+              videoPlayer.setAttribute('data-original-src', originalSrc);
+            }
+            const parts = originalSrc.split('/upload/');
+            if (parts.length < 2) {
+              console.log('Video URL format unexpected');
+              return;
+            }
+            let newSrc = parts[0] + '/upload/q_' + quality + '/' + parts[1];
+            videoPlayer.querySelector('source').src = newSrc;
+            videoPlayer.load();
+            videoPlayer.currentTime = currentTime;
           });
         }
 
@@ -791,7 +807,6 @@ app.get('/general', async (req, res) => {
 });
 
 // ========== AUTHENTICATION ==========
-// Signup
 app.get('/signup', (req, res) => {
   const form = `
   <h2>Sign Up</h2>
@@ -822,12 +837,10 @@ app.post('/signup', async (req, res) => {
     return res.send('Error signing up. All fields (username, email, password) are required.');
   }
   try {
-    // Check if username already exists
     let existingUser = await User.findOne({ username });
     if(existingUser) {
       return res.send('Error signing up. Username already taken.');
     }
-    // Create user
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new User({
       username,
@@ -845,7 +858,6 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-// Login
 app.get('/login', (req, res) => {
   const form = `
   <h2>Login</h2>
@@ -867,7 +879,6 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
-    // Convert to lowercase to match how we store usernames
     const user = await User.findOne({ username: (username || '').trim().toLowerCase() });
     if (!user) return res.send('Invalid username or password.');
     if (user.banned) return res.send('Your account has been banned.');
@@ -884,14 +895,12 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Logout
 app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
 
 // ========== VIDEO ROUTES ==========
-// Upload Video (GET)
 app.get('/upload', isAuthenticated, (req, res) => {
   const form = `
   <h2>Upload Video</h2>
@@ -928,7 +937,6 @@ app.get('/upload', isAuthenticated, (req, res) => {
   res.send(renderPage(form, req));
 });
 
-// Upload Video (POST)
 app.post('/upload', isAuthenticated, async (req, res) => {
   try {
     if (!req.files || !req.files.videoFile) {
@@ -950,7 +958,6 @@ app.post('/upload', isAuthenticated, async (req, res) => {
       });
       thumbnailPath = thumbResult.secure_url;
     } else {
-      // auto-generate from the video
       thumbnailPath = cloudinary.url(videoResult.public_id + '.png', {
         resource_type: 'video',
         format: 'png',
@@ -968,7 +975,6 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     });
     await newVideo.save();
 
-    // Emit a real-time notification for new video
     io.emit('notification', 'New video uploaded!');
     res.redirect('/');
   } catch (err) {
@@ -977,7 +983,6 @@ app.post('/upload', isAuthenticated, async (req, res) => {
   }
 });
 
-// View Video and Actions
 app.get('/video/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id)
@@ -987,7 +992,6 @@ app.get('/video/:id', async (req, res) => {
     video.viewCount++;
     await video.save();
 
-    // Suggested videos in the same category
     let suggested = await Video.find({
       category: video.category,
       _id: { $ne: video._id }
@@ -1101,7 +1105,6 @@ app.get('/video/:id', async (req, res) => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
 
-    // "Report Video" feature
     let reportForm = '';
     if (req.session.userId) {
       reportForm = `
@@ -1131,7 +1134,7 @@ app.get('/video/:id', async (req, res) => {
               <option value="1080">1080p</option>
             </select>
           </div>
-          <video width="100%" height="auto" controls>
+          <video id="videoPlayer" width="100%" height="auto" controls data-original-src="${video.filePath}">
             <source src="${video.filePath}" type="video/mp4">
             Your browser does not support the video tag.
           </video>
@@ -1165,20 +1168,16 @@ app.get('/video/:id', async (req, res) => {
   }
 });
 
-// Like Video
 app.post('/like/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner');
     if (!video) return res.send('Video not found.');
     let user = await User.findById(req.session.userId);
-
-    // Remove from dislike if present
     video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     if (video.likes.includes(req.session.userId)) {
       video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     } else {
       video.likes.push(req.session.userId);
-      // Emit real-time notification
       io.emit('notification', `${user.username} liked the video "${video.title}" by ${video.owner ? video.owner.username : 'Unknown'}`);
     }
     await video.save();
@@ -1188,20 +1187,16 @@ app.post('/like/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Dislike Video
 app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner');
     if (!video) return res.send('Video not found.');
     let user = await User.findById(req.session.userId);
-
-    // Remove from like if present
     video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     if (video.dislikes.includes(req.session.userId)) {
       video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     } else {
       video.dislikes.push(req.session.userId);
-      // Emit real-time notification
       io.emit('notification', `${user.username} disliked the video "${video.title}" by ${video.owner ? video.owner.username : 'Unknown'}`);
     }
     await video.save();
@@ -1211,15 +1206,12 @@ app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Comment on Video
 app.post('/comment/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
     video.comments.push({ user: req.session.userId, comment: req.body.comment });
     await video.save();
-
-    // Emit notification for new comment
     io.emit('notification', 'New comment added!');
     res.redirect('/video/' + req.params.id);
   } catch (err) {
@@ -1227,7 +1219,6 @@ app.post('/comment/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Report Video
 app.post('/report/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -1244,7 +1235,6 @@ app.post('/report/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Edit Video (only owner)
 app.get('/edit/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -1309,14 +1299,11 @@ app.post('/edit/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// Delete Video (only owner)
 app.post('/delete/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
     if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
-
-    // If you want to delete from Cloudinary, you'd do it here.
     await Video.deleteOne({ _id: req.params.id });
     res.redirect('/');
   } catch (err) {
@@ -1324,12 +1311,10 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
   }
 });
 
-// ========== DOWNLOAD FEATURE ==========
 app.get('/download/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    // For a direct Cloudinary link, just redirect:
     res.redirect(video.filePath);
   } catch (err) {
     console.error('Download error:', err);
@@ -1337,7 +1322,6 @@ app.get('/download/:id', async (req, res) => {
   }
 });
 
-// ========== SUBSCRIBE / UNSUBSCRIBE ==========
 app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   try {
     let owner = await User.findById(req.params.ownerId);
@@ -1353,8 +1337,6 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
       owner.subscribers.push(user._id);
     }
     await owner.save();
-
-    // Emit real-time notification
     io.emit(
       'notification',
       user.username + (alreadySubscribed ? ' unsubscribed from ' : ' subscribed to ') + owner.username
@@ -1365,10 +1347,8 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   }
 });
 
-// ========== SUBSCRIPTIONS PAGE ==========
 app.get('/subscriptions', isAuthenticated, async (req, res) => {
   try {
-    // Find channels where the current user is a subscriber
     let subscriptions = await User.find({ subscribers: req.session.userId });
     let subsHtml = `<h2>Your Subscriptions</h2><div class="row">`;
     subscriptions.forEach(sub => {
@@ -1391,7 +1371,6 @@ app.get('/subscriptions', isAuthenticated, async (req, res) => {
   }
 });
 
-// ========== USER PROFILE ==========
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
@@ -1424,9 +1403,7 @@ app.get('/profile/:id', async (req, res) => {
     <p>Subscribers: ${userProfile.subscribers.length}</p>
     `;
 
-    // If the current user is logged in
     if(req.session.userId) {
-      // If it's not your own profile, show subscribe/unsubscribe
       if(req.session.userId !== req.params.id) {
         let isSubscribed = userProfile.subscribers.includes(req.session.userId);
         profileHtml += `
@@ -1437,7 +1414,6 @@ app.get('/profile/:id', async (req, res) => {
         </form>
         `;
       } else {
-        // For your own profile, show your subscriptions
         let subscriptionsList = await User.find({ subscribers: req.session.userId });
         if(subscriptionsList.length > 0) {
           profileHtml += `<h4>Your Subscriptions:</h4><div class="row">`;
@@ -1461,7 +1437,6 @@ app.get('/profile/:id', async (req, res) => {
       profileHtml += `<button class="btn btn-info button-animation me-2" onclick="showLoginPrompt()">Subscribe</button>`;
     }
 
-    // Show popular videos by this user
     let popularVideos = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
     if(popularVideos.length > 0) {
       profileHtml += `<h4>Popular Videos by ${userProfile.username}:</h4><div class="row">`;
@@ -1483,10 +1458,8 @@ app.get('/profile/:id', async (req, res) => {
       profileHtml += `</div>`;
     }
 
-    // All Videos
     profileHtml += `<h4 class="mt-4">All Videos by ${userProfile.username}:</h4>${videosHtml}`;
 
-    // If this is your own profile, allow editing
     if(req.session.userId && req.session.userId === req.params.id) {
       profileHtml += `
       <hr>
@@ -1501,15 +1474,9 @@ app.get('/profile/:id', async (req, res) => {
           <label>About Me:</label>
           <textarea name="about" class="form-control">${userProfile.about}</textarea>
         </div>
-        <div class="form-group mb-3">
-          <label>Stream Key (for streaming):</label>
-          <input type="text" name="streamKey" class="form-control" value="${userProfile.streamKey}" placeholder="Enter your stream key here" />
-        </div>
         <button type="submit" class="btn btn-primary button-animation">Update Profile</button>
       </form>
       `;
-
-      // Show warnings if user has any
       if (userProfile.warnings && userProfile.warnings.length > 0) {
         profileHtml += `<hr><h4>Your Warnings from Admin:</h4>`;
         userProfile.warnings.forEach(w => {
@@ -1525,13 +1492,10 @@ app.get('/profile/:id', async (req, res) => {
   }
 });
 
-// Update Profile
 app.post('/updateProfile', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
     if(!user) return res.send('User not found.');
-
-    // If updating profile pic:
     if(req.files && req.files.profilePic) {
       let pic = req.files.profilePic;
       let picResult = await cloudinary.uploader.upload(pic.tempFilePath, {
@@ -1542,9 +1506,8 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
       req.session.profilePic = picResult.secure_url;
     }
     user.about = req.body.about;
-    user.streamKey = req.body.streamKey || '';
+    // Removed streamKey update to remove live stream options
     await user.save();
-
     res.redirect('/profile/' + req.session.userId);
   } catch (err) {
     console.error('Profile update error:', err);
@@ -1572,7 +1535,6 @@ app.get('/admin', isAdmin, async (req, res) => {
                   <form style="display:inline;" method="POST" action="/admin/delete/user/${user._id}">
                     <button class="btn btn-danger btn-sm button-animation me-2">Delete Account</button>
                   </form>
-                  <!-- Warn user -->
                   <form style="display:inline;" method="POST" action="/admin/warn/${user._id}">
                     <input type="text" name="message" placeholder="Warning reason" required />
                     <button class="btn btn-warning btn-sm button-animation me-2">Warn</button>
@@ -1643,15 +1605,12 @@ app.post('/verify/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Warn a user
 app.post('/admin/warn/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
     if(!user) return res.send('User not found.');
     user.warnings.push({ message: req.body.message });
     await user.save();
-
-    // Emit real-time notification for admin warning
     io.emit('notification', 'Admin warned ' + user.username + ' for: ' + req.body.message);
     res.redirect('/admin');
   } catch (err) {
@@ -1682,10 +1641,7 @@ app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
   }
 });
 
-// Dummy route for stopping live stream (admin only) - optional placeholder
-app.post('/admin/stop/live/:id', isAdmin, async (req, res) => {
-  res.send('Live stream stopped (placeholder).');
-});
+// Removed dummy live stream route to remove live stream options
 
 // ================== START SERVER ==================
 server.listen(PORT, () => {
