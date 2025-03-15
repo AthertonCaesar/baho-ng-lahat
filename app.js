@@ -528,13 +528,16 @@ function renderPage(content, req) {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
-        // Sidebar toggle for mobile devices
+        // Sidebar toggle for mobile devices - now listening to both click and touchstart events
         const sidebarToggle = document.getElementById('sidebarToggle');
         const sidebar = document.getElementById('sidebar');
+        function toggleSidebar(e) {
+          e.preventDefault();
+          sidebar.classList.toggle('show');
+        }
         if(sidebarToggle) {
-          sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('show');
-          });
+          sidebarToggle.addEventListener('click', toggleSidebar);
+          sidebarToggle.addEventListener('touchstart', toggleSidebar);
         }
         // Close sidebar when a link is clicked on mobile devices
         document.querySelectorAll('#sidebar .nav-link').forEach(link => {
@@ -581,7 +584,6 @@ function renderPage(content, req) {
 }
 
 // ========== HOME PAGE: LATEST, POPULAR & TRENDING ==========
-// --- Home Route ---
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
