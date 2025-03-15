@@ -73,7 +73,7 @@ const userSchema = new mongoose.Schema({
   },
   backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
   about:         { type: String, default: '' },
-  streamKey:     { type: String, default: '' }, // (Retained in schema but not used in UI)
+  streamKey:     { type: String, default: '' }, // (Retained in the schema but no longer exposed in UI)
   warnings: [
     {
       message: String,
@@ -162,402 +162,426 @@ function autoLink(text) {
   return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
 }
 
-// ================== HTML RENDERER (Baho ng Lahat + YouTube-ish) ==================
+// ================== HTML RENDERER (WITH SCRIPTS & SOCKET.IO) ==================
 function renderPage(content, req) {
   return `
   <!DOCTYPE html>
   <html>
   <head>
-    <title>Baho ng Lahat</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <!-- Bootstrap 5 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-      :root {
-        --primary: #00adb5;
-        --primary-hover: #00838f;
-        --dark: #222831;
-        --light: #eeeeee;
-      }
-      body {
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        margin: 0;
-        padding: 0;
-        background: var(--light);
-      }
-      /* Top Navbar */
-      .navbar-brand {
-        color: var(--primary) !important;
-        font-weight: 700;
-      }
-      .navbar .nav-link {
-        color: #333 !important;
-      }
-      .navbar .nav-link:hover {
-        color: var(--primary-hover) !important;
-      }
-      .navbar {
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-      }
-      /* Sidebar */
-      .sidebar {
-        background: #fff;
-        border-right: 1px solid #ddd;
-        width: 220px;
-        position: fixed;
-        top: 56px;
-        left: 0;
-        height: calc(100vh - 56px);
-        overflow-y: auto;
-        transition: transform 0.3s ease;
-        padding-top: 1rem;
-      }
-      .sidebar.show {
-        transform: translateX(0);
-      }
-      .sidebar .nav-link {
-        color: #333;
-        margin-bottom: 0.2rem;
-        transition: background 0.2s;
-      }
-      .sidebar .nav-link:hover {
-        background: var(--light);
-        color: var(--primary) !important;
-      }
-      @media (max-width: 768px) {
-        .sidebar {
-          transform: translateX(-100%);
-        }
-      }
-      /* Main content area */
-      main {
-        margin-left: 220px;
-        margin-top: 56px;
-        transition: margin-left 0.3s;
-      }
-      @media (max-width: 768px) {
-        main {
-          margin-left: 0;
-        }
-      }
-      /* Video cards */
-      .video-card {
-        border: 0;
-        border-radius: 8px;
-        overflow: hidden;
-        background: #fff;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-        transition: transform 0.2s;
-      }
-      .video-card:hover {
-        transform: translateY(-2px);
-      }
-      .video-thumbnail {
-        width: 100%;
-        height: 160px;
-        object-fit: cover;
-        border: none;
-      }
-      .video-card .card-body {
-        padding: 8px;
-      }
-      .video-card .card-title {
-        font-size: 1rem;
-        margin-bottom: 4px;
-      }
-      .video-card .card-text {
-        font-size: 0.85rem;
-        color: #666;
-        margin-bottom: 8px;
-      }
-      /* Notification */
-      #notification {
-        position: fixed;
-        top: 70px;
-        right: 20px;
-        background: var(--primary);
-        color: #fff;
-        padding: 10px 16px;
-        border-radius: 4px;
-        display: none;
-        z-index: 9999;
-      }
-      /* Back to top button */
-      #backToTop {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        display: none;
-        z-index: 100;
-        background: var(--primary);
-        color: #fff;
-        border: none;
-        border-radius: 24px;
-        padding: 8px 16px;
-      }
-      #backToTop:hover {
-        background: var(--primary-hover);
-      }
-      /* Buttons */
-      .btn-primary {
-        background: var(--primary);
-        border: none;
-      }
-      .btn-primary:hover {
-        background: var(--primary-hover);
-      }
-      .button-animation {
-        background: var(--primary);
-        border: none;
-        transition: transform 0.2s;
-        color: #fff;
-      }
-      .button-animation:hover {
-        background: var(--primary-hover);
-        transform: scale(1.05);
-      }
-      /* Thumbnails preview */
-      .preview-img {
-        display: none;
-        margin-top: 8px;
-        max-width: 100%;
-        border-radius: 8px;
-      }
-      /* Footer */
-      footer {
-        background: var(--dark);
-        color: #fff;
-        padding: 1.5rem 0;
-        text-align: center;
-        margin-top: 2rem;
-      }
-      footer a {
-        color: #fff !important;
-        text-decoration: none !important;
-      }
-      footer a:hover {
-        color: var(--primary-hover) !important;
-      }
-      /* Additional styling for small screens */
-      @media (max-width: 576px) {
-        .navbar .form-control {
-          width: 100px;
-        }
-      }
-    </style>
+      <title>Baho ng Lahat</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <!-- Bootstrap 5 -->
+      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+      <!-- Bootstrap Icons -->
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+      <!-- Google Fonts -->
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <style>
+          :root {
+              --primary: #00adb5;
+              --primary-hover: #00838f;
+              --dark: #222831;
+              --light: #eeeeee;
+          }
+          body {
+              background: var(--light);
+              font-family: 'Inter', system-ui, -apple-system, sans-serif;
+              min-height: 100vh;
+              display: flex;
+              flex-direction: column;
+              transition: background 0.3s ease, color 0.3s ease;
+              margin: 0;
+              padding: 0;
+          }
+          /* Navbar */
+          .navbar {
+              background: rgba(255, 255, 255, 0.95);
+              backdrop-filter: blur(10px);
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+              z-index: 999;
+          }
+          .navbar .nav-link {
+              margin-left: 10px;
+          }
+          /* Sidebar */
+          .sidebar {
+              background: var(--light);
+              border-right: 1px solid #dee2e6;
+              padding-top: 1rem;
+              transition: transform 0.3s ease;
+          }
+          .sidebar .nav-link {
+              font-weight: 500;
+              color: var(--dark);
+              margin-bottom: 0.5rem;
+              padding: 0.5rem 1rem;
+              animation: fadeIn 0.5s ease-in-out;
+          }
+          .sidebar .nav-link:hover {
+              color: var(--primary);
+              background: rgba(0, 173, 181, 0.1);
+              border-radius: 0.5rem;
+          }
+          /* Video card */
+          .video-card {
+              border: 0;
+              border-radius: 12px;
+              overflow: hidden;
+              transition: transform 0.3s, box-shadow 0.3s;
+              background: white;
+              margin-bottom: 1rem;
+          }
+          .video-card:hover {
+              transform: translateY(-5px);
+              box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+          }
+          .video-thumbnail {
+              width: 100%;
+              height: 200px;
+              object-fit: cover;
+              border-radius: 8px 8px 0 0;
+              border: none !important;
+          }
+          .btn-primary {
+              background: var(--primary);
+              border: none;
+              padding: 8px 16px;
+              border-radius: 8px;
+              transition: background 0.3s ease;
+          }
+          .btn-primary:hover {
+              background: var(--primary-hover);
+          }
+          footer {
+              background: var(--dark);
+              color: white;
+              margin-top: auto;
+              padding: 2rem 0;
+          }
+          footer a {
+              border: none;
+              outline: none;
+              text-decoration: none !important;
+              color: #fff !important;
+          }
+          footer a:focus, footer a:active {
+              outline: none;
+          }
+          footer a img {
+              filter: brightness(0) invert(1);
+          }
+          .preview-img {
+              border-radius: 8px;
+              box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+              margin: 1rem 0;
+              max-width: 100%;
+              transition: opacity 0.5s ease;
+              border: none !important;
+          }
+          #backToTop {
+              position: fixed;
+              bottom: 20px;
+              right: 20px;
+              display: none;
+              z-index: 100;
+          }
+          /* Notification styling */
+          #notification {
+              display: none;
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: var(--primary);
+              color: #fff;
+              padding: 10px 15px;
+              border-radius: 5px;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+              z-index: 1050;
+              animation: fadein 0.5s;
+          }
+          @keyframes fadein {
+              from { opacity: 0; }
+              to { opacity: 1; }
+          }
+          .button-animation {
+              transition: transform 0.3s ease;
+          }
+          .button-animation:hover {
+              transform: scale(1.05);
+          }
+          @media (max-width: 576px) {
+              .user-actions {
+                  flex-direction: column;
+                  align-items: flex-start;
+              }
+              form.d-flex {
+                  flex-direction: column;
+                  gap: 5px;
+              }
+              .btn {
+                  margin-bottom: 10px;
+              }
+          }
+          .suggested-card {
+              margin-bottom: 1rem;
+              animation: fadeIn 0.5s ease-in-out;
+          }
+          @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(20px); }
+              to { opacity: 1; transform: translateY(0); }
+          }
+          /* Desktop layout */
+          @media (min-width: 768px) {
+              #sidebar {
+                  position: relative;
+                  width: 220px;
+                  min-height: calc(100vh - 56px);
+                  float: left;
+              }
+              main {
+                  margin-left: 220px; 
+              }
+          }
+          /* Mobile layout */
+          @media (max-width: 767.98px) {
+              #sidebar {
+                  position: fixed;
+                  z-index: 1050;
+                  width: 200px;
+                  left: 0;
+                  top: 56px;
+                  height: calc(100% - 56px);
+                  overflow-y: auto;
+                  transform: translateX(-100%);
+              }
+              .sidebar.show {
+                  transform: translateX(0);
+              }
+              .navbar .nav-link { margin-left: 5px; }
+          }
+          @keyframes slideIn {
+              from { transform: translateX(-100%); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+          }
+          .slide-in {
+              animation: slideIn 0.3s forwards;
+          }
+          img {
+              border: none !important;
+          }
+      </style>
   </head>
   <body>
-    <!-- Top Navbar -->
-    <nav class="navbar navbar-expand-lg bg-white sticky-top">
+      <!-- Top Navbar -->
+      <nav class="navbar navbar-expand-lg sticky-top">
+          <div class="container-fluid">
+              <div class="d-flex align-items-center">
+                  <button type="button" class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
+                      <i class="bi bi-list"></i> Menu
+                  </button>
+                  <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
+              </div>
+              <div class="d-flex align-items-center">
+                  <form class="d-flex me-2" action="/search" method="GET">
+                      <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
+                      <button class="btn btn-outline-success ms-2 button-animation" type="submit">Search</button>
+                  </form>
+                  ${
+                    req.session.userId
+                    ? ''
+                    : `
+                      <a class="nav-link button-animation" href="/login">Login</a>
+                      <a class="nav-link button-animation" href="/signup">Sign Up</a>
+                    `
+                  }
+              </div>
+          </div>
+      </nav>
+
+      <div id="notification"></div>
+
       <div class="container-fluid">
-        <div class="d-flex align-items-center">
-          <!-- Sidebar toggle (mobile) -->
-          <button type="button" class="btn btn-outline-secondary d-lg-none me-2" id="sidebarToggle">
-            <i class="bi bi-list"></i>
-          </button>
-          <a class="navbar-brand" href="/">Baho ng Lahat</a>
-        </div>
-        <div class="d-flex align-items-center">
-          <form class="d-flex me-2" action="/search" method="GET">
-            <input class="form-control" type="search" name="query" placeholder="Search videos" aria-label="Search">
-            <button class="btn btn-outline-success ms-1 button-animation" type="submit">
-              <i class="bi bi-search"></i>
-            </button>
-          </form>
-          ${
-            // Show login/sign-up if not logged in
-            req.session.userId
-            ? ''
-            : `
-              <a class="nav-link button-animation me-2" href="/login">Login</a>
-              <a class="nav-link button-animation" href="/signup">Sign Up</a>
-            `
-          }
-        </div>
+          <div class="row">
+              <!-- Sidebar Navigation -->
+              <nav id="sidebar" class="col-md-2 sidebar">
+                  <div class="position-sticky">
+                      <ul class="nav flex-column">
+                          <li class="nav-item"><a class="nav-link button-animation" href="/">Home</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/music">Music</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/gaming">Gaming</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/news">News</a></li>
+                          <li class="nav-item"><a class="nav-link button-animation" href="/general">General</a></li>
+                          ${
+                            req.session.userId
+                            ? `
+                               <li class="nav-item"><a class="nav-link button-animation" href="/upload">Upload Video</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/profile/${req.session.userId}">Profile</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/subscriptions">Subscriptions</a></li>
+                               <li class="nav-item"><a class="nav-link button-animation" href="/logout">Logout</a></li>
+                              `
+                            : ''
+                          }
+                          ${ req.session.isAdmin ? `<li class="nav-item"><a class="nav-link button-animation" href="/admin">Admin Panel</a></li>` : '' }
+                      </ul>
+                  </div>
+              </nav>
+              <!-- Main Content -->
+              <main class="col-md-10 ms-sm-auto px-4">
+                  ${content}
+              </main>
+          </div>
       </div>
-    </nav>
 
-    <!-- Notification Toast -->
-    <div id="notification"></div>
+      <footer class="text-center">
+          <div class="container">
+              <p class="mb-0">By Villamor Gelera</p>
+              <div class="mt-2">
+                  <a href="https://www.facebook.com/villamor.gelera.5/" class="me-2 button-animation">
+                    <img src="https://img.icons8.com/ios-glyphs/24/ffffff/facebook-new.png" alt="Facebook"/>
+                  </a>
+                  <a href="https://www.instagram.com/villamor.gelera" class="button-animation">
+                    <img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png" alt="Instagram"/>
+                  </a>
+              </div>
+          </div>
+      </footer>
 
-    <!-- Container with sidebar + main content -->
-    <div class="container-fluid">
-      <div class="row">
-        <!-- Sidebar -->
-        <nav id="sidebar" class="col-md-2 sidebar">
-          <ul class="nav flex-column">
-            <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
-            <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
-            <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
-            <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
-            <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
-            ${
-              req.session.userId
-              ? `
-                <li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>
-                <li class="nav-item"><a class="nav-link" href="/subscriptions">Subscriptions</a></li>
-                <li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
-              `
-              : ''
+      <button id="backToTop" class="btn btn-primary button-animation">Top</button>
+
+      <!-- Bootstrap 5 JS -->
+      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+      <!-- Socket.io -->
+      <script src="/socket.io/socket.io.js"></script>
+      <script>
+        // Socket.io notification listener
+        var socket = io();
+        socket.on('notification', function(message) {
+          var notif = document.getElementById('notification');
+          notif.innerText = message;
+          notif.style.display = 'block';
+          setTimeout(function() { notif.style.display = 'none'; }, 3000);
+        });
+
+        // Thumbnail preview with mini autoplay on hover:
+        document.querySelectorAll('.video-thumbnail').forEach(img => {
+          img.addEventListener('mouseenter', function() {
+            const videoUrl = this.getAttribute('data-video');
+            if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
+            const preview = document.createElement('video');
+            preview.src = videoUrl;
+            preview.autoplay = true;
+            preview.muted = true;
+            preview.loop = true;
+            preview.width = this.clientWidth;
+            preview.height = this.clientHeight;
+            preview.style.objectFit = 'cover';
+            this.parentNode.replaceChild(preview, this);
+          });
+        });
+
+        // Preview images before uploading with fade-in effect:
+        function setupPreview(inputId, previewId) {
+          const inputEl = document.getElementById(inputId);
+          const previewEl = document.getElementById(previewId);
+          if (!inputEl || !previewEl) return;
+          previewEl.style.display = 'none';
+          inputEl.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+              const reader = new FileReader();
+              reader.onload = function(e) {
+                previewEl.src = e.target.result;
+                previewEl.style.opacity = 0;
+                previewEl.style.display = 'block';
+                setTimeout(() => { previewEl.style.opacity = 1; }, 50);
+              }
+              reader.readAsDataURL(file);
+            } else {
+              previewEl.src = '';
+              previewEl.style.display = 'none';
             }
-            ${
-              req.session.isAdmin
-              ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>`
-              : ''
-            }
-          </ul>
-        </nav>
-        <!-- Main content -->
-        <main class="col-md-10 ms-sm-auto px-4">
-          ${content}
-        </main>
-      </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="mt-4">
-      <p class="mb-0">By Villamor Gelera</p>
-      <div class="mt-2">
-        <a href="https://www.facebook.com/villamor.gelera.5/" class="me-2">
-          <i class="bi bi-facebook" style="font-size:1.2rem;"></i>
-        </a>
-        <a href="https://www.instagram.com/villamor.gelera">
-          <i class="bi bi-instagram" style="font-size:1.2rem;"></i>
-        </a>
-      </div>
-    </footer>
-
-    <!-- Back to Top Button -->
-    <button id="backToTop" class="button-animation">
-      <i class="bi bi-arrow-up-short"></i>
-    </button>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Socket.io -->
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-      // Socket.io notification
-      var socket = io();
-      socket.on('notification', function(message) {
-        var notif = document.getElementById('notification');
-        notif.innerText = message;
-        notif.style.display = 'block';
-        setTimeout(function() { notif.style.display = 'none'; }, 3000);
-      });
-
-      // Sidebar toggle (mobile)
-      const sidebarToggle = document.getElementById('sidebarToggle');
-      const sidebar = document.getElementById('sidebar');
-      if(sidebarToggle) {
-        sidebarToggle.addEventListener('click', () => {
-          sidebar.classList.toggle('show');
-        });
-      }
-      // Close sidebar if link is clicked on mobile
-      document.querySelectorAll('#sidebar .nav-link').forEach(link => {
-        link.addEventListener('click', () => {
-          if(window.innerWidth < 768) {
-            sidebar.classList.remove('show');
-          }
-        });
-      });
-
-      // Back-to-top button
-      const backToTopBtn = document.getElementById('backToTop');
-      window.addEventListener('scroll', () => {
-        backToTopBtn.style.display = (window.scrollY > 300) ? 'block' : 'none';
-      });
-      backToTopBtn.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-
-      // Thumbnail hover preview
-      document.querySelectorAll('.video-thumbnail').forEach(img => {
-        // On hover, replace with a short autoplay video
-        img.addEventListener('mouseenter', function() {
-          const videoUrl = this.getAttribute('data-video');
-          if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
-          const preview = document.createElement('video');
-          preview.src = videoUrl;
-          preview.autoplay = true;
-          preview.muted = true;
-          preview.loop = true;
-          preview.width = this.clientWidth;
-          preview.height = this.clientHeight;
-          preview.style.objectFit = 'cover';
-          this.parentNode.replaceChild(preview, this);
-        });
-        // On mouse leave, restore the image
-        img.addEventListener('mouseleave', function() {
-          const parent = this.parentNode;
-          const replacedVideo = parent.querySelector('video');
-          if(replacedVideo) {
-            const originalImg = document.createElement('img');
-            originalImg.src = this.getAttribute('data-video-thumbnail') || this.src;
-            originalImg.className = 'video-thumbnail';
-            originalImg.style.width = replacedVideo.width + 'px';
-            originalImg.style.height = replacedVideo.height + 'px';
-            originalImg.setAttribute('data-video', this.getAttribute('data-video'));
-            originalImg.setAttribute('data-video-thumbnail', this.getAttribute('data-video-thumbnail'));
-            parent.replaceChild(originalImg, replacedVideo);
-          }
-        });
-      });
-
-      // Preview images before uploading
-      function setupPreview(inputId, previewId) {
-        const inputEl = document.getElementById(inputId);
-        const previewEl = document.getElementById(previewId);
-        if(!inputEl || !previewEl) return;
-        inputEl.addEventListener('change', function() {
-          const file = this.files[0];
-          if(file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-              previewEl.src = e.target.result;
-              previewEl.style.display = 'block';
-            }
-            reader.readAsDataURL(file);
-          } else {
-            previewEl.src = '';
-            previewEl.style.display = 'none';
-          }
-        });
-      }
-      setupPreview('profilePicInput', 'profilePicPreview');
-      setupPreview('backgroundPicInput', 'backgroundPicPreview');
-      setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
-
-      // Web Share API
-      function shareVideo(title) {
-        if(navigator.share) {
-          navigator.share({
-            title: title,
-            text: 'Check out this video on Baho ng Lahat!',
-            url: window.location.href
-          }).catch(err => console.log('Share canceled or failed: ', err));
-        } else {
-          alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+          });
         }
-      }
+        setupPreview('profilePicInput', 'profilePicPreview');
+        setupPreview('backgroundPicInput', 'backgroundPicPreview');
+        setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
 
-      // "Please log in" helper
-      function showLoginPrompt() {
-        alert('Please log in to use this feature.');
-      }
-    </script>
+        // Web Share API for sharing video
+        function shareVideo(title) {
+          if (navigator.share) {
+            navigator.share({
+              title: title,
+              text: 'Check out this video on Baho ng Lahat!',
+              url: window.location.href
+            }).catch(err => console.log('Share canceled or failed: ', err));
+          } else {
+            alert('Sharing not supported in this browser. Copy this link: ' + window.location.href);
+          }
+        }
+
+        // Back-to-top button
+        const backToTopBtn = document.getElementById('backToTop');
+        window.addEventListener('scroll', () => {
+          backToTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
+        });
+        backToTopBtn.addEventListener('click', () => {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        // Sidebar toggle for mobile devices
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        if(sidebarToggle) {
+          sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('show');
+          });
+        }
+        // Close sidebar when a link is clicked on mobile devices
+        document.querySelectorAll('#sidebar .nav-link').forEach(link => {
+          link.addEventListener('click', () => {
+            if(window.innerWidth < 768) {
+              sidebar.classList.remove('show');
+            }
+          });
+        });
+
+        // Video quality dropdown listener with URL transformation (for Cloudinary)
+        const qualityDropdown = document.getElementById('videoQuality');
+        if(qualityDropdown) {
+          qualityDropdown.addEventListener('change', function() {
+            let quality = this.value;
+            const videoPlayer = document.getElementById('videoPlayer');
+            if (!videoPlayer) return;
+            let currentTime = videoPlayer.currentTime;
+            let originalSrc = videoPlayer.getAttribute('data-original-src');
+            if (!originalSrc) {
+              originalSrc = videoPlayer.querySelector('source').src;
+              videoPlayer.setAttribute('data-original-src', originalSrc);
+            }
+            const parts = originalSrc.split('/upload/');
+            if (parts.length < 2) {
+              console.log('Video URL format unexpected');
+              return;
+            }
+            let newSrc = parts[0] + '/upload/q_' + quality + '/' + parts[1];
+            videoPlayer.querySelector('source').src = newSrc;
+            videoPlayer.load();
+            videoPlayer.currentTime = currentTime;
+          });
+        }
+
+        // A small helper for "please login" scenarios
+        function showLoginPrompt() {
+          alert('Please log in to use this feature.');
+        }
+      </script>
   </body>
   </html>
   `;
 }
 
 // ========== HOME PAGE: LATEST, POPULAR & TRENDING ==========
+// --- Home Route ---
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
@@ -568,18 +592,16 @@ app.get('/', async (req, res) => {
     let latestHtml = '<h3>Latest Videos</h3><div class="row">';
     latestVideos.forEach(video => {
       latestHtml += `
-      <div class="col-md-4 mb-3">
+      <div class="col-md-4">
         <div class="card video-card">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${video.filePath}"
-               data-video-thumbnail="${video.thumbnail}">
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-              <i class="bi bi-play-circle"></i> Watch
-            </a>
+            <p class="text-muted"><small>Category: ${video.category}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -590,18 +612,16 @@ app.get('/', async (req, res) => {
     let popularHtml = '<h3 class="mt-4">Popular Videos</h3><div class="row">';
     popularVideos.forEach(video => {
       popularHtml += `
-      <div class="col-md-4 mb-3">
+      <div class="col-md-4">
         <div class="card video-card">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${video.filePath}"
-               data-video-thumbnail="${video.thumbnail}">
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-              <i class="bi bi-play-circle"></i> Watch
-            </a>
+            <p class="text-muted"><small>Likes: ${video.likes.length}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -612,18 +632,16 @@ app.get('/', async (req, res) => {
     let trendingHtml = '<h3 class="mt-4">Trending Videos</h3><div class="row">';
     trendingVideos.forEach(video => {
       trendingHtml += `
-      <div class="col-md-4 mb-3">
+      <div class="col-md-4">
         <div class="card video-card">
           <img src="${video.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${video.filePath}"
-               data-video-thumbnail="${video.thumbnail}">
+               class="card-img-top video-thumbnail" data-video="${video.filePath}"
+               style="max-height:200px; object-fit:cover;">
           <div class="card-body">
             <h5 class="card-title">${video.title}</h5>
             <p class="card-text">${video.description.substring(0, 60)}...</p>
-            <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-              <i class="bi bi-play-circle"></i> Watch
-            </a>
+            <p class="text-muted"><small>Views: ${video.viewCount}</small></p>
+            <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
           </div>
         </div>
       </div>
@@ -657,18 +675,15 @@ app.get('/search', async (req, res) => {
       searchHtml += '<div class="row">';
       videos.forEach(video => {
         searchHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -689,18 +704,15 @@ app.get('/music', async (req, res) => {
     let videoHtml = '<h2>Music Videos</h2><div class="row">';
     videos.forEach(video => {
       videoHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -719,18 +731,15 @@ app.get('/gaming', async (req, res) => {
     let videoHtml = '<h2>Gaming Videos</h2><div class="row">';
     videos.forEach(video => {
       videoHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -749,18 +758,15 @@ app.get('/news', async (req, res) => {
     let videoHtml = '<h2>News Videos</h2><div class="row">';
     videos.forEach(video => {
       videoHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -779,18 +785,15 @@ app.get('/general', async (req, res) => {
     let videoHtml = '<h2>General Videos</h2><div class="row">';
     videos.forEach(video => {
       videoHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
             </div>
           </div>
         </div>
@@ -806,24 +809,22 @@ app.get('/general', async (req, res) => {
 // ========== AUTHENTICATION ==========
 app.get('/signup', (req, res) => {
   const form = `
-  <div class="container" style="margin-top:80px;">
-    <h4 class="mb-3">Sign Up</h4>
-    <form method="POST" action="/signup">
-      <div class="mb-3">
-        <label>Username:</label>
-        <input type="text" name="username" class="form-control" required />
-      </div>
-      <div class="mb-3">
-        <label>Email:</label>
-        <input type="email" name="email" class="form-control" required />
-      </div>
-      <div class="mb-3">
-        <label>Password:</label>
-        <input type="password" name="password" class="form-control" required />
-      </div>
-      <button type="submit" class="btn btn-primary button-animation">Sign Up</button>
-    </form>
-  </div>
+  <h2>Sign Up</h2>
+  <form method="POST" action="/signup">
+    <div class="form-group mb-3">
+      <label>Username:</label>
+      <input type="text" name="username" class="form-control" required />
+    </div>
+    <div class="form-group mb-3">
+      <label>Email:</label>
+      <input type="email" name="email" class="form-control" required />
+    </div>
+    <div class="form-group mb-3">
+      <label>Password:</label>
+      <input type="password" name="password" class="form-control" required />
+    </div>
+    <button type="submit" class="btn btn-primary button-animation">Sign Up</button>
+  </form>
   `;
   res.send(renderPage(form, req));
 });
@@ -859,20 +860,18 @@ app.post('/signup', async (req, res) => {
 
 app.get('/login', (req, res) => {
   const form = `
-  <div class="container" style="margin-top:80px;">
-    <h4 class="mb-3">Login</h4>
-    <form method="POST" action="/login">
-      <div class="mb-3">
-        <label>Username:</label>
-        <input type="text" name="username" class="form-control" required />
-      </div>
-      <div class="mb-3">
-        <label>Password:</label>
-        <input type="password" name="password" class="form-control" required />
-      </div>
-      <button type="submit" class="btn btn-primary button-animation">Login</button>
-    </form>
-  </div>
+  <h2>Login</h2>
+  <form method="POST" action="/login">
+    <div class="form-group mb-3">
+      <label>Username:</label>
+      <input type="text" name="username" class="form-control" required />
+    </div>
+    <div class="form-group mb-3">
+      <label>Password:</label>
+      <input type="password" name="password" class="form-control" required />
+    </div>
+    <button type="submit" class="btn btn-primary button-animation">Login</button>
+  </form>
   `;
   res.send(renderPage(form, req));
 });
@@ -904,38 +903,36 @@ app.get('/logout', (req, res) => {
 // ========== VIDEO ROUTES ==========
 app.get('/upload', isAuthenticated, (req, res) => {
   const form = `
-  <div class="container" style="margin-top:80px;">
-    <h4 class="mb-3">Upload Video</h4>
-    <form method="POST" action="/upload" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label>Title:</label>
-        <input type="text" name="title" class="form-control" required />
-      </div>
-      <div class="mb-3">
-        <label>Description:</label>
-        <textarea name="description" class="form-control" rows="4" required></textarea>
-      </div>
-      <div class="mb-3">
-        <label>Category:</label>
-        <select name="category" class="form-control">
-          <option value="Music">Music</option>
-          <option value="Gaming">Gaming</option>
-          <option value="News">News</option>
-          <option value="General" selected>General</option>
-        </select>
-      </div>
-      <div class="mb-3">
-        <label>Video File:</label>
-        <input type="file" name="videoFile" class="form-control" accept="video/*" required />
-      </div>
-      <div class="mb-3">
-        <label>Thumbnail (optional):</label>
-        <input type="file" name="thumbnailFile" class="form-control" accept="image/*" id="thumbnailFileInput"/>
-        <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
-      </div>
-      <button type="submit" class="btn btn-primary button-animation">Upload</button>
-    </form>
-  </div>
+  <h2>Upload Video</h2>
+  <form method="POST" action="/upload" enctype="multipart/form-data">
+    <div class="form-group mb-3">
+      <label>Title:</label>
+      <input type="text" name="title" class="form-control" required />
+    </div>
+    <div class="form-group mb-3">
+      <label>Description:</label>
+      <textarea name="description" class="form-control" required></textarea>
+    </div>
+    <div class="form-group mb-3">
+      <label>Category:</label>
+      <select name="category" class="form-control">
+        <option value="Music">Music</option>
+        <option value="Gaming">Gaming</option>
+        <option value="News">News</option>
+        <option value="General" selected>General</option>
+      </select>
+    </div>
+    <div class="form-group mb-3">
+      <label>Video File:</label>
+      <input type="file" name="videoFile" class="form-control-file" accept="video/*" required />
+    </div>
+    <div class="form-group mb-3">
+      <label>Thumbnail (optional):</label>
+      <input type="file" name="thumbnailFile" class="form-control-file" accept="image/*" id="thumbnailFileInput"/>
+      <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
+    </div>
+    <button type="submit" class="btn btn-primary button-animation">Upload</button>
+  </form>
   `;
   res.send(renderPage(form, req));
 });
@@ -1003,14 +1000,12 @@ app.get('/video/:id', async (req, res) => {
     let suggestedHtml = '';
     suggested.forEach(sv => {
       suggestedHtml += `
-      <div class="card mb-2">
+      <div class="card suggested-card">
         <div class="card-body p-2">
           <img src="${sv.thumbnail}" alt="Thumbnail"
-               class="video-thumbnail"
-               data-video="${sv.filePath}"
-               data-video-thumbnail="${sv.thumbnail}"
+               class="video-thumbnail" data-video="${sv.filePath}"
                style="width:100%; max-height:100px; object-fit:cover; border-radius:5px;">
-          <p class="mt-2"><strong>${sv.title}</strong></p>
+          <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
           <a href="/video/${sv._id}" class="btn btn-sm btn-primary button-animation"><i class="bi bi-play-circle"></i> Watch</a>
         </div>
       </div>
@@ -1094,15 +1089,15 @@ app.get('/video/:id', async (req, res) => {
     let commentForm = '';
     if (req.session.userId) {
       commentForm = `
-        <form method="POST" action="/comment/${video._id}" class="mt-3">
-          <div class="mb-2">
+        <form method="POST" action="/comment/${video._id}">
+          <div class="form-group mb-3">
             <textarea name="comment" class="form-control" placeholder="Add a comment..." required></textarea>
           </div>
-          <button type="submit" class="btn btn-primary button-animation"><i class="bi bi-chat-right-text"></i> Comment</button>
+          <button type="submit" class="btn btn-primary button-animation mt-3">Comment</button>
         </form>
       `;
     } else {
-      commentForm = `<button class="btn btn-primary button-animation mt-3" onclick="showLoginPrompt()"><i class="bi bi-chat-right-text"></i> Log in to comment</button>`;
+      commentForm = `<button class="btn btn-primary button-animation" onclick="showLoginPrompt()">Log in to comment</button>`;
     }
 
     let commentsHtml = '';
@@ -1114,7 +1109,7 @@ app.get('/video/:id', async (req, res) => {
     if (req.session.userId) {
       reportForm = `
       <form method="POST" action="/report/${video._id}" class="mt-4">
-        <div class="mb-2">
+        <div class="form-group mb-2">
           <input type="text" name="reason" class="form-control" placeholder="Reason for report" required />
         </div>
         <button type="submit" class="btn btn-danger button-animation">
@@ -1127,44 +1122,42 @@ app.get('/video/:id', async (req, res) => {
     }
 
     let videoPage = `
-      <div class="container" style="margin-top:80px;">
-        <div class="row">
-          <div class="col-md-8">
-            <h3>${video.title}</h3>
-            <div class="mb-3">
-              <label for="videoQuality" class="form-label">Video Quality:</label>
-              <select id="videoQuality" class="form-select" style="max-width: 150px;">
-                <option value="360">360p</option>
-                <option value="480">480p</option>
-                <option value="720" selected>720p</option>
-                <option value="1080">1080p</option>
-              </select>
-            </div>
-            <video id="videoPlayer" width="100%" height="auto" controls data-original-src="${video.filePath}">
-              <source src="${video.filePath}" type="video/mp4">
-              Your browser does not support the video tag.
-            </video>
-            <p class="mt-2">Category: ${video.category}</p>
-            <p style="white-space: pre-wrap;">${autoLink(video.description)}</p>
-            <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
-            ${subscribeButton}
-            ${likeBtn}
-            ${dislikeBtn}
-            ${editDelete}
-            ${downloadButton}
-            ${shareButton}
-            <hr>
-            <h5>Comments</h5>
-            ${commentsHtml}
-            ${commentForm}
-            <hr>
-            <h5>Report this Video</h5>
-            ${reportForm}
+      <div class="row">
+        <div class="col-md-8">
+          <h2>${video.title}</h2>
+          <div class="mb-2">
+            <label for="videoQuality" class="form-label">Video Quality:</label>
+            <select id="videoQuality" class="form-select" style="max-width: 150px;">
+              <option value="360">360p</option>
+              <option value="480">480p</option>
+              <option value="720" selected>720p</option>
+              <option value="1080">1080p</option>
+            </select>
           </div>
-          <div class="col-md-4">
-            <h5>Suggested Videos</h5>
-            ${suggestedHtml}
-          </div>
+          <video id="videoPlayer" width="100%" height="auto" controls data-original-src="${video.filePath}">
+            <source src="${video.filePath}" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+          <p>Category: ${video.category}</p>
+          <p style="white-space: pre-wrap;">${autoLink(video.description)}</p>
+          <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
+          ${subscribeButton}
+          ${likeBtn} 
+          ${dislikeBtn} 
+          ${editDelete} 
+          ${downloadButton} 
+          ${shareButton}
+          <hr>
+          <h4>Comments</h4>
+          ${commentsHtml}
+          ${commentForm}
+          <hr>
+          <h4>Report this Video</h4>
+          ${reportForm}
+        </div>
+        <div class="col-md-4">
+          <h4>Suggested Videos</h4>
+          ${suggestedHtml}
         </div>
       </div>
     `;
@@ -1248,34 +1241,32 @@ app.get('/edit/:id', isAuthenticated, async (req, res) => {
     if (!video) return res.send('Video not found.');
     if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
     const form = `
-    <div class="container" style="margin-top:80px;">
-      <h4 class="mb-3">Edit Video</h4>
-      <form method="POST" action="/edit/${video._id}" enctype="multipart/form-data">
-        <div class="mb-3">
-          <label>Title:</label>
-          <input type="text" name="title" class="form-control" value="${video.title}" required />
-        </div>
-        <div class="mb-3">
-          <label>Description:</label>
-          <textarea name="description" class="form-control" rows="4" required>${video.description}</textarea>
-        </div>
-        <div class="mb-3">
-          <label>Category:</label>
-          <select name="category" class="form-control">
-            <option value="Music" ${video.category === 'Music' ? 'selected' : ''}>Music</option>
-            <option value="Gaming" ${video.category === 'Gaming' ? 'selected' : ''}>Gaming</option>
-            <option value="News" ${video.category === 'News' ? 'selected' : ''}>News</option>
-            <option value="General" ${video.category === 'General' ? 'selected' : ''}>General</option>
-          </select>
-        </div>
-        <div class="mb-3">
-          <label>Change Thumbnail (optional):</label>
-          <input type="file" name="thumbnailFile" class="form-control" accept="image/*" id="thumbnailFileInput" />
-          <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
-        </div>
-        <button type="submit" class="btn btn-primary button-animation">Update</button>
-      </form>
-    </div>
+    <h2>Edit Video</h2>
+    <form method="POST" action="/edit/${video._id}" enctype="multipart/form-data">
+      <div class="form-group mb-3">
+        <label>Title:</label>
+        <input type="text" name="title" class="form-control" value="${video.title}" required />
+      </div>
+      <div class="form-group mb-3">
+        <label>Description:</label>
+        <textarea name="description" class="form-control" required>${video.description}</textarea>
+      </div>
+      <div class="form-group mb-3">
+        <label>Category:</label>
+        <select name="category" class="form-control">
+          <option value="Music" ${video.category === 'Music' ? 'selected' : ''}>Music</option>
+          <option value="Gaming" ${video.category === 'Gaming' ? 'selected' : ''}>Gaming</option>
+          <option value="News" ${video.category === 'News' ? 'selected' : ''}>News</option>
+          <option value="General" ${video.category === 'General' ? 'selected' : ''}>General</option>
+        </select>
+      </div>
+      <div class="form-group mb-3">
+        <label>Change Thumbnail (optional):</label>
+        <input type="file" name="thumbnailFile" class="form-control-file" accept="image/*" id="thumbnailFileInput" />
+        <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
+      </div>
+      <button type="submit" class="btn btn-primary button-animation">Update</button>
+    </form>
     `;
     res.send(renderPage(form, req));
   } catch (err) {
@@ -1331,7 +1322,6 @@ app.get('/download/:id', async (req, res) => {
   }
 });
 
-// ========== SUBSCRIBE / UNSUBSCRIBE ==========
 app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   try {
     let owner = await User.findById(req.params.ownerId);
@@ -1360,12 +1350,12 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
 app.get('/subscriptions', isAuthenticated, async (req, res) => {
   try {
     let subscriptions = await User.find({ subscribers: req.session.userId });
-    let subsHtml = `<h4 class="mb-3">Your Subscriptions</h4><div class="row">`;
+    let subsHtml = `<h2>Your Subscriptions</h2><div class="row">`;
     subscriptions.forEach(sub => {
       subsHtml += `
         <div class="col-md-3">
           <div class="card mb-2">
-            <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:120px; object-fit:cover; border:none;">
+            <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover; border:none;">
             <div class="card-body">
               <h6 class="card-title">${sub.username}</h6>
               <a href="/profile/${sub._id}" class="btn btn-primary button-animation btn-sm">View Profile</a>
@@ -1375,13 +1365,12 @@ app.get('/subscriptions', isAuthenticated, async (req, res) => {
       `;
     });
     subsHtml += `</div>`;
-    res.send(renderPage(`<div class="container" style="margin-top:80px;">${subsHtml}</div>`, req));
+    res.send(renderPage(subsHtml, req));
   } catch(err) {
     res.send('Error loading subscriptions.');
   }
 });
 
-// ========== USER PROFILE ==========
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
@@ -1391,18 +1380,15 @@ app.get('/profile/:id', async (req, res) => {
     let videosHtml = '<div class="row">';
     videos.forEach(video => {
       videosHtml += `
-        <div class="col-md-4 mb-3">
+        <div class="col-md-4">
           <div class="card video-card">
             <img src="${video.thumbnail}" alt="Thumbnail"
-                 class="video-thumbnail"
-                 data-video="${video.filePath}"
-                 data-video-thumbnail="${video.thumbnail}">
+                 class="card-img-top video-thumbnail" data-video="${video.filePath}"
+                 style="max-height:200px; object-fit:cover;">
             <div class="card-body">
               <h5 class="card-title">${video.title}</h5>
               <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                <i class="bi bi-play-circle"></i> Watch
-              </a>
+              <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch Video</a>
             </div>
           </div>
         </div>
@@ -1411,11 +1397,10 @@ app.get('/profile/:id', async (req, res) => {
     videosHtml += '</div>';
 
     let profileHtml = `
-    <div class="container" style="margin-top:80px;">
-      <h4>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h4>
-      <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:120px;height:120px; object-fit:cover; border-radius:50%; border:none;">
-      <p class="mt-2">${userProfile.about}</p>
-      <p>Subscribers: ${userProfile.subscribers.length}</p>
+    <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
+    <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover; border-radius:50%; border:none;">
+    <p>${userProfile.about}</p>
+    <p>Subscribers: ${userProfile.subscribers.length}</p>
     `;
 
     if(req.session.userId) {
@@ -1431,12 +1416,12 @@ app.get('/profile/:id', async (req, res) => {
       } else {
         let subscriptionsList = await User.find({ subscribers: req.session.userId });
         if(subscriptionsList.length > 0) {
-          profileHtml += `<h5 class="mt-4">Your Subscriptions:</h5><div class="row">`;
+          profileHtml += `<h4>Your Subscriptions:</h4><div class="row">`;
           subscriptionsList.forEach(sub => {
             profileHtml += `
               <div class="col-md-3">
                 <div class="card mb-2">
-                  <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:120px; object-fit:cover; border:none;">
+                  <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover; border:none;">
                   <div class="card-body">
                     <h6 class="card-title">${sub.username}</h6>
                     <a href="/profile/${sub._id}" class="btn btn-sm btn-primary button-animation">View</a>
@@ -1454,20 +1439,17 @@ app.get('/profile/:id', async (req, res) => {
 
     let popularVideos = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
     if(popularVideos.length > 0) {
-      profileHtml += `<h5 class="mt-4">Popular Videos by ${userProfile.username}:</h5><div class="row mb-3">`;
+      profileHtml += `<h4>Popular Videos by ${userProfile.username}:</h4><div class="row">`;
       popularVideos.forEach(video => {
         profileHtml += `
-          <div class="col-md-4 mb-3">
+          <div class="col-md-4">
             <div class="card video-card">
               <img src="${video.thumbnail}" alt="Thumbnail"
-                   class="video-thumbnail"
-                   data-video="${video.filePath}"
-                   data-video-thumbnail="${video.thumbnail}">
+                   class="card-img-top video-thumbnail"
+                   style="max-height:200px; object-fit:cover;">
               <div class="card-body">
                 <h5 class="card-title">${video.title}</h5>
-                <a href="/video/${video._id}" class="btn btn-sm btn-primary button-animation me-2">
-                  <i class="bi bi-play-circle"></i> Watch
-                </a>
+                <a href="/video/${video._id}" class="btn btn-primary button-animation me-2"><i class="bi bi-play-circle"></i> Watch</a>
               </div>
             </div>
           </div>
@@ -1476,33 +1458,32 @@ app.get('/profile/:id', async (req, res) => {
       profileHtml += `</div>`;
     }
 
-    profileHtml += `<h5 class="mt-4">All Videos by ${userProfile.username}:</h5>${videosHtml}`;
+    profileHtml += `<h4 class="mt-4">All Videos by ${userProfile.username}:</h4>${videosHtml}`;
 
     if(req.session.userId && req.session.userId === req.params.id) {
       profileHtml += `
       <hr>
-      <h5>Update Profile</h5>
-      <form method="POST" action="/updateProfile" enctype="multipart/form-data" class="mb-4">
-        <div class="mb-3">
+      <h3>Update Profile</h3>
+      <form method="POST" action="/updateProfile" enctype="multipart/form-data">
+        <div class="form-group mb-3">
           <label>Profile Picture:</label>
-          <input type="file" name="profilePic" accept="image/*" class="form-control" id="profilePicInput" />
+          <input type="file" name="profilePic" accept="image/*" class="form-control-file" id="profilePicInput" />
           <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
         </div>
-        <div class="mb-3">
+        <div class="form-group mb-3">
           <label>About Me:</label>
-          <textarea name="about" class="form-control" rows="3">${userProfile.about}</textarea>
+          <textarea name="about" class="form-control">${userProfile.about}</textarea>
         </div>
         <button type="submit" class="btn btn-primary button-animation">Update Profile</button>
       </form>
       `;
       if (userProfile.warnings && userProfile.warnings.length > 0) {
-        profileHtml += `<hr><h5>Your Warnings from Admin:</h5>`;
+        profileHtml += `<hr><h4>Your Warnings from Admin:</h4>`;
         userProfile.warnings.forEach(w => {
           profileHtml += `<p>- ${w.message} (on ${w.date.toLocaleString()})</p>`;
         });
       }
     }
-    profileHtml += `</div>`;
 
     res.send(renderPage(profileHtml, req));
   } catch (err) {
@@ -1525,7 +1506,7 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
       req.session.profilePic = picResult.secure_url;
     }
     user.about = req.body.about;
-    // We skip streamKey update to remove live stream features
+    // Removed streamKey update to remove live stream options
     await user.save();
     res.redirect('/profile/' + req.session.userId);
   } catch (err) {
@@ -1538,14 +1519,13 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
 app.get('/admin', isAdmin, async (req, res) => {
   try {
     let users = await User.find({});
-    let userHtml = `<h4 class="mb-3">Admin Panel - Manage Users</h4>`;
+    let userHtml = '<h2>Admin Panel - Manage Users</h2>';
     users.forEach(user => {
       userHtml += `
       <div class="card mb-2">
         <div class="card-body">
           <p>
-            <strong>${user.username}</strong>
-            - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
+            ${user.username} - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
             ${
               user._id.toString() !== req.session.userId
                 ? `
@@ -1578,14 +1558,13 @@ app.get('/admin', isAdmin, async (req, res) => {
     });
 
     let videos = await Video.find({}).populate('owner');
-    let videoHtml = `<h4 class="mt-4 mb-3">Admin Panel - Manage Videos</h4>`;
+    let videoHtml = '<h2 class="mt-4">Admin Panel - Manage Videos</h2>';
     videos.forEach(video => {
       videoHtml += `
       <div class="card mb-2">
         <div class="card-body">
           <p>
-            <strong>${video.title}</strong>
-            by ${video.owner ? video.owner.username : 'Unknown'}
+            ${video.title} by ${video.owner ? video.owner.username : 'Unknown'}
             <form style="display:inline;" method="POST" action="/admin/delete/video/${video._id}">
               <button class="btn btn-danger btn-sm button-animation me-2">Delete Video</button>
             </form>
@@ -1595,13 +1574,7 @@ app.get('/admin', isAdmin, async (req, res) => {
       `;
     });
 
-    const panelHtml = `
-      <div class="container" style="margin-top:80px;">
-        ${userHtml}
-        ${videoHtml}
-      </div>
-    `;
-    res.send(renderPage(panelHtml, req));
+    res.send(renderPage(userHtml + videoHtml, req));
   } catch (err) {
     console.error('Admin panel error:', err);
     res.send('Internal server error in admin panel.');
@@ -1667,6 +1640,8 @@ app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
     res.send('Error deleting user.');
   }
 });
+
+// Removed dummy live stream route to remove live stream options
 
 // ================== START SERVER ==================
 server.listen(PORT, () => {
