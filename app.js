@@ -1,5 +1,5 @@
 // ================== DEPENDENCIES & CONFIGURATION ==================
-require('dotenv').config(); // Use dotenv to load env variables
+require('dotenv').config(); // Load environment variables
 const express       = require('express');
 const mongoose      = require('mongoose');
 const bcrypt        = require('bcryptjs');
@@ -9,13 +9,14 @@ const path          = require('path');
 const fs            = require('fs');
 const helmet        = require('helmet');
 const morgan        = require('morgan');
+const rateLimit     = require('express-rate-limit');
 
 // For auto-generating thumbnails (requires FFmpeg):
 const ffmpeg        = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-// Cloudinary configuration (use environment variables ideally)
+// Cloudinary configuration (sensitive keys from env ideally)
 const cloudinary    = require('cloudinary').v2;
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'df0yc1cvr',
@@ -30,28 +31,39 @@ const server = http.createServer(app);
 const io = require('socket.io')(server);
 const PORT = process.env.PORT || 3000;
 
+// ================== RATE LIMITING ==================
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: 'Too many attempts from this IP, please try again later.'
+});
+
 // ================== MIDDLEWARE ==================
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(fileUpload({ useTempFiles: true }));
+app.use(fileUpload({ 
+  useTempFiles: true,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50 MB limit
+}));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'yourSecretKey',
   resave: false,
   saveUninitialized: false,
-  // In production, replace the default store with a persistent one (e.g., connect-mongo)
+  // In production use a persistent session store
 }));
 
-// Serve static files (for uploads)
+// Serve static files (for uploads and client assets)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Create required directories if they do not exist
 ['./uploads', './uploads/videos', './uploads/profiles', './uploads/backgrounds', './uploads/thumbnails']
   .forEach(dir => { if (!fs.existsSync(dir)) fs.mkdirSync(dir); });
 
 // ================== MONGOOSE CONNECTION & SCHEMAS ==================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority&appName=bahonglahat', {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
@@ -72,7 +84,7 @@ const userSchema = new mongoose.Schema({
   },
   backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
   about:         { type: String, default: '' },
-  streamKey:     { type: String, default: '' }, // reserved for potential future use
+  streamKey:     { type: String, default: '' },
   warnings: [{
     message: String,
     date: { type: Date, default: Date.now }
@@ -124,12 +136,11 @@ const isAdmin = async (req, res, next) => {
 };
 
 function autoLink(text) {
-  // Convert URLs in text to clickable links.
   return text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
 }
 
 function renderPage(content, req) {
-  // HTML renderer with inline styles, navbar, and footer.
+  // Dark mode toggle added along with a button in the navbar.
   return `
   <!DOCTYPE html>
   <html>
@@ -140,23 +151,47 @@ function renderPage(content, req) {
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <style>
-          :root { --primary: #00adb5; --primary-hover: #00838f; --dark: #222831; --light: #eeeeee; }
-          body { background: var(--light); font-family: 'Inter', sans-serif; margin: 0; padding: 0; min-height: 100vh; display: flex; flex-direction: column; }
+          :root {
+            --primary: #00adb5;
+            --primary-hover: #00838f;
+            --dark-bg: #222831;
+            --light-bg: #eeeeee;
+            --text-light: #ffffff;
+            --text-dark: #222831;
+          }
+          body {
+            background: var(--light-bg);
+            color: var(--text-dark);
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background 0.3s, color 0.3s;
+          }
+          body.dark-mode {
+            background: var(--dark-bg);
+            color: var(--text-light);
+          }
           .navbar { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+          body.dark-mode .navbar { background: rgba(34,34,34,0.95); }
           .nav-link { margin-left: 10px; }
-          .sidebar { background: var(--light); border-right: 1px solid #dee2e6; padding-top: 1rem; transition: transform 0.3s ease; }
-          .sidebar .nav-link { font-weight: 500; color: var(--dark); margin-bottom: 0.5rem; padding: 0.5rem 1rem; }
+          .sidebar { background: var(--light-bg); border-right: 1px solid #dee2e6; padding-top: 1rem; transition: transform 0.3s ease; }
+          body.dark-mode .sidebar { background: var(--dark-bg); }
+          .sidebar .nav-link { font-weight: 500; color: var(--text-dark); margin-bottom: 0.5rem; padding: 0.5rem 1rem; }
+          body.dark-mode .sidebar .nav-link { color: var(--text-light); }
           .sidebar .nav-link:hover { color: var(--primary); background: rgba(0,173,181,0.1); border-radius: 0.5rem; }
           .video-card { border: 0; border-radius: 12px; overflow: hidden; transition: transform 0.3s, box-shadow 0.3s; background: white; margin-bottom: 1rem; }
           .video-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
           .video-thumbnail { width: 100%; height: 200px; object-fit: cover; }
           .btn-primary { background: var(--primary); border: none; padding: 8px 16px; border-radius: 8px; }
           .btn-primary:hover { background: var(--primary-hover); }
-          footer { background: var(--dark); color: white; padding: 2rem 0; margin-top: auto; }
-          footer a { text-decoration: none !important; color: #fff; }
+          footer { background: var(--dark-bg); color: var(--text-light); padding: 2rem 0; margin-top: auto; }
+          footer a { text-decoration: none !important; color: var(--text-light); }
           .preview-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin: 1rem 0; max-width: 100%; transition: opacity 0.5s ease; }
           #backToTop { position: fixed; bottom: 20px; right: 20px; display: none; }
-          #notification { display: none; position: fixed; top: 20px; right: 20px; background: var(--primary); color: #fff; padding: 10px 15px; border-radius: 5px; z-index: 1050; }
+          #notification { display: none; position: fixed; top: 20px; right: 20px; background: var(--primary); color: var(--text-light); padding: 10px 15px; border-radius: 5px; z-index: 1050; }
           @media (max-width: 576px) { .navbar .nav-link { margin-left: 5px; } }
       </style>
   </head>
@@ -174,6 +209,7 @@ function renderPage(content, req) {
                       <input class="form-control" type="search" name="query" placeholder="Search videos">
                       <button class="btn btn-outline-success ms-2" type="submit">Search</button>
                   </form>
+                  <button class="btn btn-outline-dark me-2" id="darkModeToggle">Dark Mode</button>
                   ${
                     req.session.userId 
                     ? '' 
@@ -222,6 +258,7 @@ function renderPage(content, req) {
       <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
       <script src="/socket.io/socket.io.js"></script>
       <script>
+        // Socket notifications
         var socket = io();
         socket.on('notification', function(message) {
           var notif = document.getElementById('notification');
@@ -229,6 +266,13 @@ function renderPage(content, req) {
           notif.style.display = 'block';
           setTimeout(() => { notif.style.display = 'none'; }, 3000);
         });
+        // Dark Mode Toggle
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        darkModeToggle.addEventListener('click', () => {
+          document.body.classList.toggle('dark-mode');
+          darkModeToggle.innerText = document.body.classList.contains('dark-mode') ? 'Light Mode' : 'Dark Mode';
+        });
+        // Thumbnail preview
         document.querySelectorAll('.video-thumbnail').forEach(img => {
           img.addEventListener('mouseenter', function() {
             const videoUrl = this.getAttribute('data-video');
@@ -244,6 +288,7 @@ function renderPage(content, req) {
             this.parentNode.replaceChild(preview, this);
           });
         });
+        // File preview setup
         function setupPreview(inputId, previewId) {
           const inputEl = document.getElementById(inputId);
           const previewEl = document.getElementById(previewId);
@@ -269,30 +314,7 @@ function renderPage(content, req) {
         setupPreview('profilePicInput', 'profilePicPreview');
         setupPreview('backgroundPicInput', 'backgroundPicPreview');
         setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
-        function shareVideo(title) {
-          if (navigator.share) {
-            navigator.share({
-              title: title,
-              text: 'Check out this video on Baho ng Lahat!',
-              url: window.location.href
-            }).catch(err => console.log('Share canceled or failed:', err));
-          } else {
-            alert('Sharing not supported. Copy this link: ' + window.location.href);
-          }
-        }
-        const backToTopBtn = document.getElementById('backToTop');
-        window.addEventListener('scroll', () => {
-          backToTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
-        });
-        backToTopBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        const sidebar = document.getElementById('sidebar');
-        if(sidebarToggle) {
-          sidebarToggle.addEventListener('click', () => sidebar.classList.toggle('show'));
-        }
-        document.querySelectorAll('#sidebar .nav-link').forEach(link => {
-          link.addEventListener('click', () => { if(window.innerWidth < 768) sidebar.classList.remove('show'); });
-        });
+        // Video quality dropdown for Cloudinary transformation
         const qualityDropdown = document.getElementById('videoQuality');
         if(qualityDropdown) {
           qualityDropdown.addEventListener('change', function() {
@@ -310,6 +332,21 @@ function renderPage(content, req) {
             videoPlayer.currentTime = currentTime;
           });
         }
+        // Back-to-top button
+        const backToTopBtn = document.getElementById('backToTop');
+        window.addEventListener('scroll', () => {
+          backToTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
+        });
+        backToTopBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        // Sidebar toggle for mobile
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        if(sidebarToggle) {
+          sidebarToggle.addEventListener('click', () => sidebar.classList.toggle('show'));
+        }
+        document.querySelectorAll('#sidebar .nav-link').forEach(link => {
+          link.addEventListener('click', () => { if(window.innerWidth < 768) sidebar.classList.remove('show'); });
+        });
         function showLoginPrompt() { alert('Please log in to use this feature.'); }
       </script>
   </body>
@@ -342,7 +379,7 @@ createDefaultAdmin();
 
 // ================== ROUTES ==================
 
-// Home: Display latest, popular, and trending videos
+// Home: Latest, Popular, Trending Videos
 app.get('/', async (req, res) => {
   try {
     let allVideos = await Video.find({}).populate('owner');
@@ -360,7 +397,7 @@ app.get('/', async (req, res) => {
               <div class="card-body">
                 <h5 class="card-title">${video.title}</h5>
                 <p class="card-text">${video.description.substring(0, 60)}...</p>
-                ${ extraInfo ? `<p class="text-muted">${extraInfo}: ${extraInfo === 'Category' ? video.category : video.viewCount || video.likes.length}</p>` : '' }
+                ${ extraInfo ? `<p class="text-muted">${extraInfo}: ${extraInfo === 'Category' ? video.category : (video.viewCount || video.likes.length)}</p>` : '' }
                 <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
               </div>
             </div>
@@ -381,7 +418,7 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Search videos
+// Search Videos
 app.get('/search', async (req, res) => {
   const q = req.query.query || '';
   try {
@@ -449,7 +486,7 @@ app.get('/search', async (req, res) => {
   });
 });
 
-// ================== AUTHENTICATION ROUTES ==================
+// ================== AUTHENTICATION ROUTES (with rate limiter) ==================
 app.get('/signup', (req, res) => {
   const form = `
     <h2>Sign Up</h2>
@@ -471,14 +508,11 @@ app.get('/signup', (req, res) => {
   `;
   res.send(renderPage(form, req));
 });
-
-app.post('/signup', async (req, res) => {
+app.post('/signup', authLimiter, async (req, res) => {
   let { username, email, password } = req.body;
   username = (username || '').trim().toLowerCase();
   email    = (email || '').trim().toLowerCase();
-  if (!username || !email || !password) {
-    return res.send('All fields are required.');
-  }
+  if (!username || !email || !password) return res.send('All fields are required.');
   try {
     let existingUser = await User.findOne({ username });
     if (existingUser) return res.send('Username already taken.');
@@ -509,8 +543,7 @@ app.get('/login', (req, res) => {
   `;
   res.send(renderPage(form, req));
 });
-
-app.post('/login', async (req, res) => {
+app.post('/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
     const user = await User.findOne({ username: (username || '').trim().toLowerCase() });
@@ -528,7 +561,6 @@ app.post('/login', async (req, res) => {
     res.send('Error logging in.');
   }
 });
-
 app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
@@ -570,7 +602,6 @@ app.get('/upload', isAuthenticated, (req, res) => {
   `;
   res.send(renderPage(form, req));
 });
-
 app.post('/upload', isAuthenticated, async (req, res) => {
   try {
     if (!req.files || !req.files.videoFile) return res.send('No video file uploaded.');
@@ -610,7 +641,6 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     res.send('Error uploading video.');
   }
 });
-
 app.get('/video/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
@@ -750,7 +780,6 @@ app.get('/video/:id', async (req, res) => {
     res.send('Error retrieving video.');
   }
 });
-
 app.post('/like/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner');
@@ -770,7 +799,6 @@ app.post('/like/:id', isAuthenticated, async (req, res) => {
     res.send('Error liking video.');
   }
 });
-
 app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id).populate('owner');
@@ -790,7 +818,6 @@ app.post('/dislike/:id', isAuthenticated, async (req, res) => {
     res.send('Error disliking video.');
   }
 });
-
 app.post('/comment/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -804,7 +831,6 @@ app.post('/comment/:id', isAuthenticated, async (req, res) => {
     res.send('Error commenting on video.');
   }
 });
-
 app.post('/report/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -818,7 +844,6 @@ app.post('/report/:id', isAuthenticated, async (req, res) => {
     res.send('Error reporting video.');
   }
 });
-
 app.get('/edit/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -858,7 +883,6 @@ app.get('/edit/:id', isAuthenticated, async (req, res) => {
     res.send('Error editing video.');
   }
 });
-
 app.post('/edit/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -881,7 +905,6 @@ app.post('/edit/:id', isAuthenticated, async (req, res) => {
     res.send('Error updating video.');
   }
 });
-
 app.post('/delete/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -894,7 +917,6 @@ app.post('/delete/:id', isAuthenticated, async (req, res) => {
     res.send('Error deleting video.');
   }
 });
-
 app.get('/download/:id', async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -905,7 +927,6 @@ app.get('/download/:id', async (req, res) => {
     res.send('Error downloading file.');
   }
 });
-
 app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   try {
     let owner = await User.findById(req.params.ownerId);
@@ -926,7 +947,6 @@ app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
     res.send('Error subscribing/unsubscribing.');
   }
 });
-
 app.get('/subscriptions', isAuthenticated, async (req, res) => {
   try {
     let subscriptions = await User.find({ subscribers: req.session.userId });
@@ -1062,7 +1082,6 @@ app.get('/profile/:id', async (req, res) => {
     res.send('Error loading profile.');
   }
 });
-
 app.post('/updateProfile', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
@@ -1144,7 +1163,6 @@ app.get('/admin', isAdmin, async (req, res) => {
     res.send('Internal server error in admin panel.');
   }
 });
-
 app.post('/ban/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
@@ -1157,7 +1175,6 @@ app.post('/ban/:id', isAdmin, async (req, res) => {
     res.send('Error updating ban status.');
   }
 });
-
 app.post('/verify/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
@@ -1170,7 +1187,6 @@ app.post('/verify/:id', isAdmin, async (req, res) => {
     res.send('Error verifying user.');
   }
 });
-
 app.post('/admin/warn/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
@@ -1184,7 +1200,6 @@ app.post('/admin/warn/:id', isAdmin, async (req, res) => {
     res.send('Error warning user.');
   }
 });
-
 app.post('/admin/delete/video/:id', isAdmin, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -1196,7 +1211,6 @@ app.post('/admin/delete/video/:id', isAdmin, async (req, res) => {
     res.send('Error deleting video.');
   }
 });
-
 app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
   try {
     let user = await User.findById(req.params.id);
@@ -1207,6 +1221,23 @@ app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
     console.error('Admin delete user error:', err);
     res.send('Error deleting user.');
   }
+});
+
+// ================== API ENDPOINT ==================
+// Returns JSON list of videos for external API consumers
+app.get('/api/videos', async (req, res) => {
+  try {
+    const videos = await Video.find({}).populate('owner', 'username profilePic');
+    res.json(videos);
+  } catch (err) {
+    console.error('API error:', err);
+    res.status(500).json({ error: 'Error fetching videos.' });
+  }
+});
+
+// ================== CATCH-ALL ERROR HANDLER ==================
+app.use((req, res) => {
+  res.status(404).send(renderPage('<h2>404 - Page Not Found</h2>', req));
 });
 
 // ================== START SERVER ==================
