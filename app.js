@@ -1,5 +1,6 @@
-// ================== DEPENDENCIES & CONFIGURATION ==================
-require('dotenv').config(); // Load environment variables
+// app.js - Complete Overhaul
+
+require('dotenv').config();
 const express       = require('express');
 const mongoose      = require('mongoose');
 const bcrypt        = require('bcryptjs');
@@ -10,60 +11,60 @@ const fs            = require('fs');
 const helmet        = require('helmet');
 const morgan        = require('morgan');
 const rateLimit     = require('express-rate-limit');
+const http          = require('http');
+const socketIO      = require('socket.io');
 
-// For auto-generating thumbnails (requires FFmpeg):
+// For video thumbnail generation (via Cloudinary transformation)
 const ffmpeg        = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-// Cloudinary configuration (sensitive keys from env ideally)
+// Cloudinary config
 const cloudinary    = require('cloudinary').v2;
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'df0yc1cvr',
-  api_key: process.env.CLOUDINARY_API_KEY || '143758952799997',
-  api_secret: process.env.CLOUDINARY_API_SECRET || 'a9TyH_t9lqZvem3cKkYSoXJ_6-E'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'yourCloudName',
+  api_key: process.env.CLOUDINARY_API_KEY || 'yourApiKey',
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'yourApiSecret'
 });
 
-// ================== INITIALIZE APP, HTTP & SOCKET.IO ==================
+// ========== INITIALIZE APP ==========
 const app = express();
-const http = require('http');
 const server = http.createServer(app);
-const io = require('socket.io')(server);
+const io = socketIO(server);
 const PORT = process.env.PORT || 3000;
 
-// ================== RATE LIMITING ==================
+// ========== RATE LIMITING ==========
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // limit each IP to 10 requests per windowMs
-  message: 'Too many attempts from this IP, please try again later.'
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many requests from this IP, please try again later.'
 });
 
-// ================== MIDDLEWARE ==================
+// ========== MIDDLEWARE ==========
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(fileUpload({ 
+app.use(fileUpload({
   useTempFiles: true,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50 MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }
 }));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'yourSecretKey',
   resave: false,
   saveUninitialized: false,
-  // In production use a persistent session store
 }));
 
-// Serve static files (for uploads and client assets)
+// Serve static assets
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
-// Create required directories if they do not exist
+// Ensure required directories exist
 ['./uploads', './uploads/videos', './uploads/profiles', './uploads/backgrounds', './uploads/thumbnails']
   .forEach(dir => { if (!fs.existsSync(dir)) fs.mkdirSync(dir); });
 
-// ================== MONGOOSE CONNECTION & SCHEMAS ==================
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://athertoncaesar:v5z5spFWXvTB9ce@bahonglahat.jrff3.mongodb.net/?retryWrites=true&w=majority', {
+// ========== DATABASE & SCHEMAS ==========
+mongoose.connect(process.env.MONGODB_URI || 'yourMongoDB_URI', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
@@ -78,10 +79,7 @@ const userSchema = new mongoose.Schema({
   banned:        { type: Boolean, default: false },
   verified:      { type: Boolean, default: false },
   subscribers:   [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  profilePic:    { 
-    type: String, 
-    default: 'https://via.placeholder.com/150/ffffff/000000?text=No+Pic' 
-  },
+  profilePic:    { type: String, default: 'https://via.placeholder.com/150/ffffff/000000?text=No+Pic' },
   backgroundPic: { type: String, default: '/uploads/backgrounds/default.png' },
   about:         { type: String, default: '' },
   streamKey:     { type: String, default: '' },
@@ -117,7 +115,7 @@ const videoSchema = new mongoose.Schema({
 const User  = mongoose.model('User', userSchema);
 const Video = mongoose.model('Video', videoSchema);
 
-// ================== HELPER FUNCTIONS & MIDDLEWARE ==================
+// ========== HELPER FUNCTIONS ==========
 const isAuthenticated = async (req, res, next) => {
   if (req.session.userId) return next();
   return res.redirect('/login');
@@ -140,224 +138,125 @@ function autoLink(text) {
 }
 
 function renderPage(content, req) {
-  // Dark mode toggle added along with a button in the navbar.
   return `
   <!DOCTYPE html>
-  <html>
+  <html lang="en">
   <head>
-      <title>Baho ng Lahat</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
-      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-      <style>
-          :root {
-            --primary: #00adb5;
-            --primary-hover: #00838f;
-            --dark-bg: #222831;
-            --light-bg: #eeeeee;
-            --text-light: #ffffff;
-            --text-dark: #222831;
-          }
-          body {
-            background: var(--light-bg);
-            color: var(--text-dark);
-            font-family: 'Inter', sans-serif;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            transition: background 0.3s, color 0.3s;
-          }
-          body.dark-mode {
-            background: var(--dark-bg);
-            color: var(--text-light);
-          }
-          .navbar { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-          body.dark-mode .navbar { background: rgba(34,34,34,0.95); }
-          .nav-link { margin-left: 10px; }
-          .sidebar { background: var(--light-bg); border-right: 1px solid #dee2e6; padding-top: 1rem; transition: transform 0.3s ease; }
-          body.dark-mode .sidebar { background: var(--dark-bg); }
-          .sidebar .nav-link { font-weight: 500; color: var(--text-dark); margin-bottom: 0.5rem; padding: 0.5rem 1rem; }
-          body.dark-mode .sidebar .nav-link { color: var(--text-light); }
-          .sidebar .nav-link:hover { color: var(--primary); background: rgba(0,173,181,0.1); border-radius: 0.5rem; }
-          .video-card { border: 0; border-radius: 12px; overflow: hidden; transition: transform 0.3s, box-shadow 0.3s; background: white; margin-bottom: 1rem; }
-          .video-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
-          .video-thumbnail { width: 100%; height: 200px; object-fit: cover; }
-          .btn-primary { background: var(--primary); border: none; padding: 8px 16px; border-radius: 8px; }
-          .btn-primary:hover { background: var(--primary-hover); }
-          footer { background: var(--dark-bg); color: var(--text-light); padding: 2rem 0; margin-top: auto; }
-          footer a { text-decoration: none !important; color: var(--text-light); }
-          .preview-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin: 1rem 0; max-width: 100%; transition: opacity 0.5s ease; }
-          #backToTop { position: fixed; bottom: 20px; right: 20px; display: none; }
-          #notification { display: none; position: fixed; top: 20px; right: 20px; background: var(--primary); color: var(--text-light); padding: 10px 15px; border-radius: 5px; z-index: 1050; }
-          @media (max-width: 576px) { .navbar .nav-link { margin-left: 5px; } }
-      </style>
+    <title>New Media Hub</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <style>
+      :root {
+        --primary: #0d6efd;
+        --dark-bg: #121212;
+        --light-bg: #f8f9fa;
+        --text-dark: #212529;
+        --text-light: #ffffff;
+      }
+      body {
+        background: var(--light-bg);
+        color: var(--text-dark);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        transition: background 0.3s, color 0.3s;
+      }
+      body.dark-mode {
+        background: var(--dark-bg);
+        color: var(--text-light);
+      }
+      .navbar, .footer {
+        transition: background 0.3s;
+      }
+      .navbar {
+        background: var(--primary);
+      }
+      .navbar a {
+        color: var(--text-light) !important;
+      }
+      .card {
+        margin-bottom: 1rem;
+      }
+      #notification {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: var(--primary);
+        color: var(--text-light);
+        padding: 10px 15px;
+        border-radius: 5px;
+        z-index: 1050;
+        display: none;
+      }
+    </style>
   </head>
   <body>
-      <nav class="navbar navbar-expand-lg sticky-top">
-          <div class="container-fluid">
-              <div class="d-flex align-items-center">
-                  <button type="button" class="btn btn-outline-secondary d-md-none me-2" id="sidebarToggle">
-                      <i class="bi bi-list"></i> Menu
-                  </button>
-                  <a class="navbar-brand fw-bold" href="/" style="color: var(--primary);">Baho ng Lahat</a>
-              </div>
-              <div class="d-flex align-items-center">
-                  <form class="d-flex me-2" action="/search" method="GET">
-                      <input class="form-control" type="search" name="query" placeholder="Search videos">
-                      <button class="btn btn-outline-success ms-2" type="submit">Search</button>
-                  </form>
-                  <button class="btn btn-outline-dark me-2" id="darkModeToggle">Dark Mode</button>
-                  ${
-                    req.session.userId 
-                    ? '' 
-                    : `<a class="nav-link" href="/login">Login</a>
-                       <a class="nav-link" href="/signup">Sign Up</a>`
-                  }
-              </div>
-          </div>
-      </nav>
-      <div id="notification"></div>
+    <nav class="navbar navbar-expand-lg">
       <div class="container-fluid">
-          <div class="row">
-              <nav id="sidebar" class="col-md-2 sidebar">
-                  <div class="position-sticky">
-                      <ul class="nav flex-column">
-                          <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
-                          <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
-                          ${
-                            req.session.userId 
-                            ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload Video</a></li>
-                               <li class="nav-item"><a class="nav-link" href="/profile/${req.session.userId}">Profile</a></li>
-                               <li class="nav-item"><a class="nav-link" href="/subscriptions">Subscriptions</a></li>
-                               <li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>`
-                            : ''
-                          }
-                          ${ req.session.isAdmin ? `<li class="nav-item"><a class="nav-link" href="/admin">Admin Panel</a></li>` : '' }
-                      </ul>
-                  </div>
-              </nav>
-              <main class="col-md-10 ms-sm-auto px-4">${content}</main>
-          </div>
+        <a class="navbar-brand" href="/" style="font-weight: bold;">New Media Hub</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarContent">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+            <li class="nav-item"><a class="nav-link" href="/music">Music</a></li>
+            <li class="nav-item"><a class="nav-link" href="/gaming">Gaming</a></li>
+            <li class="nav-item"><a class="nav-link" href="/news">News</a></li>
+            <li class="nav-item"><a class="nav-link" href="/general">General</a></li>
+            ${ req.session.userId ? `<li class="nav-item"><a class="nav-link" href="/upload">Upload</a></li>` : '' }
+          </ul>
+          <form class="d-flex" action="/search" method="GET">
+            <input class="form-control me-2" type="search" name="query" placeholder="Search">
+            <button class="btn btn-light" type="submit">Search</button>
+          </form>
+          <button id="darkModeToggle" class="btn btn-outline-light ms-2">Dark Mode</button>
+          ${ req.session.userId ? 
+            `<a class="btn btn-outline-light ms-2" href="/profile/${req.session.userId}">Profile</a>
+             <a class="btn btn-outline-light ms-2" href="/logout">Logout</a>` 
+            : `<a class="btn btn-outline-light ms-2" href="/login">Login</a>
+               <a class="btn btn-outline-light ms-2" href="/signup">Sign Up</a>`
+          }
+        </div>
       </div>
-      <footer class="text-center">
-          <div class="container">
-              <p class="mb-0">By Villamor Gelera</p>
-              <div class="mt-2">
-                  <a href="https://www.facebook.com/villamor.gelera.5/" class="me-2"><img src="https://img.icons8.com/ios-glyphs/24/ffffff/facebook-new.png" alt="Facebook"/></a>
-                  <a href="https://www.instagram.com/villamor.gelera"><img src="https://img.icons8.com/ios-filled/24/ffffff/instagram-new.png" alt="Instagram"/></a>
-              </div>
-          </div>
-      </footer>
-      <button id="backToTop" class="btn btn-primary">Top</button>
-      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-      <script src="/socket.io/socket.io.js"></script>
-      <script>
-        // Socket notifications
-        var socket = io();
-        socket.on('notification', function(message) {
-          var notif = document.getElementById('notification');
-          notif.innerText = message;
-          notif.style.display = 'block';
-          setTimeout(() => { notif.style.display = 'none'; }, 3000);
-        });
-        // Dark Mode Toggle
-        const darkModeToggle = document.getElementById('darkModeToggle');
-        darkModeToggle.addEventListener('click', () => {
-          document.body.classList.toggle('dark-mode');
-          darkModeToggle.innerText = document.body.classList.contains('dark-mode') ? 'Light Mode' : 'Dark Mode';
-        });
-        // Thumbnail preview
-        document.querySelectorAll('.video-thumbnail').forEach(img => {
-          img.addEventListener('mouseenter', function() {
-            const videoUrl = this.getAttribute('data-video');
-            if (!videoUrl || videoUrl.endsWith('.png') || videoUrl.endsWith('.jpg')) return;
-            const preview = document.createElement('video');
-            preview.src = videoUrl;
-            preview.autoplay = true;
-            preview.muted = true;
-            preview.loop = true;
-            preview.width = this.clientWidth;
-            preview.height = this.clientHeight;
-            preview.style.objectFit = 'cover';
-            this.parentNode.replaceChild(preview, this);
-          });
-        });
-        // File preview setup
-        function setupPreview(inputId, previewId) {
-          const inputEl = document.getElementById(inputId);
-          const previewEl = document.getElementById(previewId);
-          if (!inputEl || !previewEl) return;
-          previewEl.style.display = 'none';
-          inputEl.addEventListener('change', function() {
-            const file = this.files[0];
-            if (file) {
-              const reader = new FileReader();
-              reader.onload = (e) => {
-                previewEl.src = e.target.result;
-                previewEl.style.opacity = 0;
-                previewEl.style.display = 'block';
-                setTimeout(() => { previewEl.style.opacity = 1; }, 50);
-              };
-              reader.readAsDataURL(file);
-            } else {
-              previewEl.src = '';
-              previewEl.style.display = 'none';
-            }
-          });
-        }
-        setupPreview('profilePicInput', 'profilePicPreview');
-        setupPreview('backgroundPicInput', 'backgroundPicPreview');
-        setupPreview('thumbnailFileInput', 'thumbnailFilePreview');
-        // Video quality dropdown for Cloudinary transformation
-        const qualityDropdown = document.getElementById('videoQuality');
-        if(qualityDropdown) {
-          qualityDropdown.addEventListener('change', function() {
-            const quality = this.value;
-            const videoPlayer = document.getElementById('videoPlayer');
-            if (!videoPlayer) return;
-            const currentTime = videoPlayer.currentTime;
-            let originalSrc = videoPlayer.getAttribute('data-original-src') || videoPlayer.querySelector('source').src;
-            videoPlayer.setAttribute('data-original-src', originalSrc);
-            const parts = originalSrc.split('/upload/');
-            if(parts.length < 2) return console.log('Unexpected video URL format');
-            const newSrc = parts[0] + '/upload/q_' + quality + '/' + parts[1];
-            videoPlayer.querySelector('source').src = newSrc;
-            videoPlayer.load();
-            videoPlayer.currentTime = currentTime;
-          });
-        }
-        // Back-to-top button
-        const backToTopBtn = document.getElementById('backToTop');
-        window.addEventListener('scroll', () => {
-          backToTopBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
-        });
-        backToTopBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
-        // Sidebar toggle for mobile
-        const sidebarToggle = document.getElementById('sidebarToggle');
-        const sidebar = document.getElementById('sidebar');
-        if(sidebarToggle) {
-          sidebarToggle.addEventListener('click', () => sidebar.classList.toggle('show'));
-        }
-        document.querySelectorAll('#sidebar .nav-link').forEach(link => {
-          link.addEventListener('click', () => { if(window.innerWidth < 768) sidebar.classList.remove('show'); });
-        });
-        function showLoginPrompt() { alert('Please log in to use this feature.'); }
-      </script>
+    </nav>
+    <div id="notification"></div>
+    <div class="container my-4">
+      ${content}
+    </div>
+    <footer class="footer bg-primary text-center text-light py-3">
+      <div class="container">
+        <span>&copy; ${new Date().getFullYear()} New Media Hub. All rights reserved.</span>
+      </div>
+    </footer>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      // Socket.IO notifications
+      const socket = io();
+      socket.on('notification', (msg) => {
+        const notif = document.getElementById('notification');
+        notif.innerText = msg;
+        notif.style.display = 'block';
+        setTimeout(() => { notif.style.display = 'none'; }, 3000);
+      });
+      // Dark mode toggle
+      const darkModeToggle = document.getElementById('darkModeToggle');
+      darkModeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        darkModeToggle.innerText = document.body.classList.contains('dark-mode') ? 'Light Mode' : 'Dark Mode';
+      });
+    </script>
   </body>
   </html>
   `;
 }
 
-// ================== CREATE DEFAULT ADMIN ==================
+// ========== CREATE DEFAULT ADMIN ==========
 async function createDefaultAdmin() {
   try {
-    const adminUsername = 'villamor gelera';
+    const adminUsername = 'admin';
     let admin = await User.findOne({ username: adminUsername });
     if (!admin) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
@@ -369,7 +268,7 @@ async function createDefaultAdmin() {
         verified: true
       });
       await admin.save();
-      console.log('Default admin created: villamor gelera, password: admin123');
+      console.log('Default admin created: admin (password: admin123)');
     }
   } catch (err) {
     console.error('Error creating default admin:', err);
@@ -377,147 +276,144 @@ async function createDefaultAdmin() {
 }
 createDefaultAdmin();
 
-// ================== ROUTES ==================
+// ========== ROUTES ==========
 
-// Home: Latest, Popular, Trending Videos
+// Home Page - Latest, Popular, Trending
 app.get('/', async (req, res) => {
   try {
-    let allVideos = await Video.find({}).populate('owner');
-    let latestVideos = [...allVideos].sort((a, b) => b.uploadDate - a.uploadDate).slice(0, 5);
-    let popularVideos = [...allVideos].sort((a, b) => b.likes.length - a.likes.length).slice(0, 5);
-    let trendingVideos = [...allVideos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 5);
+    let videos = await Video.find({}).populate('owner');
+    const sortVideos = (field, limit = 5) =>
+      [...videos].sort((a, b) => b[field] - a[field]).slice(0, limit);
 
-    const renderVideos = (title, videos, extraInfo) => {
-      let html = `<h3>${title}</h3><div class="row">`;
-      videos.forEach(video => {
+    const renderSection = (title, vids, metric) => {
+      let html = `<h2 class="mb-3">${title}</h2><div class="row">`;
+      vids.forEach(v => {
         html += `
           <div class="col-md-4">
-            <div class="card video-card">
-              <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" data-video="${video.filePath}">
+            <div class="card">
+              <img src="${v.thumbnail}" class="card-img-top" alt="Thumbnail">
               <div class="card-body">
-                <h5 class="card-title">${video.title}</h5>
-                <p class="card-text">${video.description.substring(0, 60)}...</p>
-                ${ extraInfo ? `<p class="text-muted">${extraInfo}: ${extraInfo === 'Category' ? video.category : (video.viewCount || video.likes.length)}</p>` : '' }
-                <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
+                <h5 class="card-title">${v.title}</h5>
+                <p class="card-text">${v.description.substring(0, 60)}...</p>
+                <p class="text-muted">${metric}: ${metric === 'Likes' ? v.likes.length : v.viewCount}</p>
+                <a href="/video/${v._id}" class="btn btn-primary">Watch</a>
               </div>
             </div>
-          </div>
-        `;
+          </div>`;
       });
-      html += '</div>';
-      return html;
+      return html + '</div>';
     };
 
-    const combinedHtml = renderVideos('Latest Videos', latestVideos) +
-                         renderVideos('Popular Videos', popularVideos, 'Likes') +
-                         renderVideos('Trending Videos', trendingVideos, 'Views');
-    res.send(renderPage(combinedHtml, req));
+    const latest = sortVideos('uploadDate');
+    const popular = sortVideos('likes', 5);
+    const trending = sortVideos('viewCount', 5);
+
+    const pageHtml = renderSection('Latest Videos', latest, 'Uploaded') +
+                     renderSection('Popular Videos', popular, 'Likes') +
+                     renderSection('Trending Videos', trending, 'Views');
+    res.send(renderPage(pageHtml, req));
   } catch (err) {
-    console.error('Error loading home videos:', err);
-    res.send('Error loading videos.');
+    console.error('Home route error:', err);
+    res.send(renderPage('<h2>Error loading home page.</h2>', req));
   }
 });
 
 // Search Videos
 app.get('/search', async (req, res) => {
-  const q = req.query.query || '';
+  const query = req.query.query || '';
   try {
     let videos = await Video.find({
       $or: [
-        { title: { $regex: q, $options: 'i' } },
-        { description: { $regex: q, $options: 'i' } },
-        { category: { $regex: q, $options: 'i' } }
+        { title: { $regex: query, $options: 'i' } },
+        { description: { $regex: query, $options: 'i' } },
+        { category: { $regex: query, $options: 'i' } }
       ]
     });
-    let searchHtml = `<h2>Search Results for "${q}"</h2>`;
+    let html = `<h2>Search Results for "${query}"</h2><div class="row">`;
     if (videos.length === 0) {
-      searchHtml += '<p>No videos found.</p>';
+      html += `<p>No videos found.</p>`;
     } else {
-      searchHtml += '<div class="row">';
-      videos.forEach(video => {
-        searchHtml += `
+      videos.forEach(v => {
+        html += `
           <div class="col-md-4">
-            <div class="card video-card">
-              <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" data-video="${video.filePath}">
+            <div class="card">
+              <img src="${v.thumbnail}" class="card-img-top" alt="Thumbnail">
               <div class="card-body">
-                <h5 class="card-title">${video.title}</h5>
-                <p class="card-text">${video.description.substring(0, 60)}...</p>
-                <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
+                <h5 class="card-title">${v.title}</h5>
+                <p class="card-text">${v.description.substring(0, 60)}...</p>
+                <a href="/video/${v._id}" class="btn btn-primary">Watch</a>
               </div>
             </div>
-          </div>
-        `;
+          </div>`;
       });
-      searchHtml += '</div>';
     }
-    res.send(renderPage(searchHtml, req));
+    html += '</div>';
+    res.send(renderPage(html, req));
   } catch (err) {
     console.error('Search error:', err);
-    res.send('Error searching videos.');
+    res.send(renderPage('<h2>Error processing search.</h2>', req));
   }
 });
 
-// Category routes: Music, Gaming, News, General
+// Category routes (Music, Gaming, News, General)
 ['music', 'gaming', 'news', 'general'].forEach(category => {
   app.get(`/${category}`, async (req, res) => {
     try {
-      let videos = await Video.find({ category: new RegExp(`^${category}$`, 'i') });
+      let vids = await Video.find({ category: new RegExp(`^${category}$`, 'i') });
       let html = `<h2>${category.charAt(0).toUpperCase() + category.slice(1)} Videos</h2><div class="row">`;
-      videos.forEach(video => {
+      vids.forEach(v => {
         html += `
           <div class="col-md-4">
-            <div class="card video-card">
-              <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" data-video="${video.filePath}">
+            <div class="card">
+              <img src="${v.thumbnail}" class="card-img-top" alt="Thumbnail">
               <div class="card-body">
-                <h5 class="card-title">${video.title}</h5>
-                <p class="card-text">${video.description.substring(0, 60)}...</p>
-                <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
+                <h5 class="card-title">${v.title}</h5>
+                <p class="card-text">${v.description.substring(0, 60)}...</p>
+                <a href="/video/${v._id}" class="btn btn-primary">Watch</a>
               </div>
             </div>
-          </div>
-        `;
+          </div>`;
       });
       html += '</div>';
       res.send(renderPage(html, req));
     } catch (err) {
-      console.error(`Error loading ${category} videos:`, err);
-      res.send(`Error loading ${category} videos.`);
+      console.error(`${category} error:`, err);
+      res.send(renderPage(`<h2>Error loading ${category} videos.</h2>`, req));
     }
   });
 });
 
-// ================== AUTHENTICATION ROUTES (with rate limiter) ==================
+// ========== AUTHENTICATION ROUTES ==========
 app.get('/signup', (req, res) => {
-  const form = `
+  const html = `
     <h2>Sign Up</h2>
     <form method="POST" action="/signup">
       <div class="mb-3">
         <label>Username:</label>
-        <input type="text" name="username" class="form-control" required />
+        <input type="text" name="username" class="form-control" required>
       </div>
       <div class="mb-3">
         <label>Email:</label>
-        <input type="email" name="email" class="form-control" required />
+        <input type="email" name="email" class="form-control" required>
       </div>
       <div class="mb-3">
         <label>Password:</label>
-        <input type="password" name="password" class="form-control" required />
+        <input type="password" name="password" class="form-control" required>
       </div>
       <button type="submit" class="btn btn-primary">Sign Up</button>
-    </form>
-  `;
-  res.send(renderPage(form, req));
+    </form>`;
+  res.send(renderPage(html, req));
 });
+
 app.post('/signup', authLimiter, async (req, res) => {
   let { username, email, password } = req.body;
-  username = (username || '').trim().toLowerCase();
-  email    = (email || '').trim().toLowerCase();
+  username = username.trim().toLowerCase();
+  email = email.trim().toLowerCase();
   if (!username || !email || !password) return res.send('All fields are required.');
   try {
-    let existingUser = await User.findOne({ username });
-    if (existingUser) return res.send('Username already taken.');
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new User({ username, email, password: hashedPassword });
+    if (await User.findOne({ username })) return res.send('Username taken.');
+    const hashed = await bcrypt.hash(password, 10);
+    const newUser = new User({ username, email, password: hashed });
     await newUser.save();
     res.redirect('/login');
   } catch (err) {
@@ -527,53 +423,51 @@ app.post('/signup', authLimiter, async (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  const form = `
+  const html = `
     <h2>Login</h2>
     <form method="POST" action="/login">
       <div class="mb-3">
         <label>Username:</label>
-        <input type="text" name="username" class="form-control" required />
+        <input type="text" name="username" class="form-control" required>
       </div>
       <div class="mb-3">
         <label>Password:</label>
-        <input type="password" name="password" class="form-control" required />
+        <input type="password" name="password" class="form-control" required>
       </div>
       <button type="submit" class="btn btn-primary">Login</button>
-    </form>
-  `;
-  res.send(renderPage(form, req));
+    </form>`;
+  res.send(renderPage(html, req));
 });
+
 app.post('/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
   try {
-    const user = await User.findOne({ username: (username || '').trim().toLowerCase() });
-    if (!user) return res.send('Invalid username or password.');
-    if (user.banned) return res.send('Your account has been banned.');
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.send('Invalid username or password.');
-    req.session.userId   = user._id.toString();
+    const user = await User.findOne({ username: username.trim().toLowerCase() });
+    if (!user || user.banned || !(await bcrypt.compare(password, user.password)))
+      return res.send('Invalid credentials or banned.');
+    req.session.userId = user._id.toString();
     req.session.username = user.username;
-    req.session.isAdmin  = user.isAdmin;
-    req.session.profilePic = user.profilePic;
+    req.session.isAdmin = user.isAdmin;
     res.redirect('/');
   } catch (err) {
     console.error('Login error:', err);
     res.send('Error logging in.');
   }
 });
+
 app.get('/logout', (req, res) => {
   req.session.destroy();
   res.redirect('/');
 });
 
-// ================== VIDEO ROUTES ==================
+// ========== VIDEO ROUTES ==========
 app.get('/upload', isAuthenticated, (req, res) => {
-  const form = `
+  const html = `
     <h2>Upload Video</h2>
     <form method="POST" action="/upload" enctype="multipart/form-data">
       <div class="mb-3">
         <label>Title:</label>
-        <input type="text" name="title" class="form-control" required />
+        <input type="text" name="title" class="form-control" required>
       </div>
       <div class="mb-3">
         <label>Description:</label>
@@ -590,46 +484,47 @@ app.get('/upload', isAuthenticated, (req, res) => {
       </div>
       <div class="mb-3">
         <label>Video File:</label>
-        <input type="file" name="videoFile" class="form-control" accept="video/*" required />
+        <input type="file" name="videoFile" class="form-control" accept="video/*" required>
       </div>
       <div class="mb-3">
         <label>Thumbnail (optional):</label>
-        <input type="file" name="thumbnailFile" class="form-control" accept="image/*" id="thumbnailFileInput" />
-        <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
+        <input type="file" name="thumbnailFile" class="form-control" accept="image/*">
       </div>
       <button type="submit" class="btn btn-primary">Upload</button>
-    </form>
-  `;
-  res.send(renderPage(form, req));
+    </form>`;
+  res.send(renderPage(html, req));
 });
+
 app.post('/upload', isAuthenticated, async (req, res) => {
   try {
-    if (!req.files || !req.files.videoFile) return res.send('No video file uploaded.');
-    let videoFile = req.files.videoFile;
-    const videoResult = await cloudinary.uploader.upload(videoFile.tempFilePath, {
+    if (!req.files || !req.files.videoFile) return res.send('No video uploaded.');
+    const videoFile = req.files.videoFile;
+    // Upload video to Cloudinary
+    const videoUpload = await cloudinary.uploader.upload(videoFile.tempFilePath, {
       resource_type: 'video',
       folder: 'videos'
     });
-    const filePath = videoResult.secure_url;
-    let thumbnailPath;
+    const videoUrl = videoUpload.secure_url;
+    let thumbnailUrl;
     if (req.files.thumbnailFile) {
-      const thumbResult = await cloudinary.uploader.upload(req.files.thumbnailFile.tempFilePath, {
+      const thumbUpload = await cloudinary.uploader.upload(req.files.thumbnailFile.tempFilePath, {
         resource_type: 'image',
         folder: 'thumbnails'
       });
-      thumbnailPath = thumbResult.secure_url;
+      thumbnailUrl = thumbUpload.secure_url;
     } else {
-      thumbnailPath = cloudinary.url(videoResult.public_id + '.png', {
+      // Generate thumbnail via Cloudinary transformation
+      thumbnailUrl = cloudinary.url(videoUpload.public_id + '.png', {
         resource_type: 'video',
         format: 'png',
         transformation: [{ width: 320, height: 240, crop: 'fill' }]
       });
     }
-    let newVideo = new Video({
+    const newVideo = new Video({
       title: req.body.title,
       description: req.body.description,
-      filePath,
-      thumbnail: thumbnailPath,
+      filePath: videoUrl,
+      thumbnail: thumbnailUrl,
       category: req.body.category || 'General',
       owner: req.session.userId
     });
@@ -641,183 +536,133 @@ app.post('/upload', isAuthenticated, async (req, res) => {
     res.send('Error uploading video.');
   }
 });
+
 app.get('/video/:id', async (req, res) => {
   try {
-    let video = await Video.findById(req.params.id).populate('owner').populate('comments.user');
+    let video = await Video.findById(req.params.id)
+      .populate('owner')
+      .populate('comments.user');
     if (!video) return res.send('Video not found.');
     video.viewCount++;
     await video.save();
 
+    // Suggested videos
     const suggested = await Video.find({
       category: video.category,
       _id: { $ne: video._id }
     }).limit(5);
-    let suggestedHtml = '';
+    let suggestedHtml = `<h4>Suggested Videos</h4><div class="list-group">`;
     suggested.forEach(sv => {
-      suggestedHtml += `
-        <div class="card mb-2">
-          <div class="card-body p-2">
-            <img src="${sv.thumbnail}" alt="Thumbnail" class="video-thumbnail" data-video="${sv.filePath}" style="width:100%; max-height:100px; object-fit:cover; border-radius:5px;">
-            <p class="mt-1 mb-1"><strong>${sv.title}</strong></p>
-            <a href="/video/${sv._id}" class="btn btn-sm btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
-          </div>
-        </div>
-      `;
+      suggestedHtml += `<a href="/video/${sv._id}" class="list-group-item list-group-item-action">
+                          <div class="d-flex">
+                            <img src="${sv.thumbnail}" style="width:60px; height:60px; object-fit:cover; margin-right:10px;" alt="Thumb">
+                            <div>${sv.title}</div>
+                          </div>
+                        </a>`;
     });
+    suggestedHtml += `</div>`;
 
-    let subscribeButton = '';
-    if (req.session.userId) {
-      if (req.session.userId !== video.owner._id.toString()) {
-        const isSubscribed = video.owner.subscribers.includes(req.session.userId);
-        subscribeButton = `
-          <form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
-            <button class="btn btn-info" type="submit">
-              ${isSubscribed ? 'Unsubscribe' : 'Subscribe'}
-            </button>
-          </form>
-        `;
-      }
-    } else {
-      subscribeButton = `<button class="btn btn-info" onclick="showLoginPrompt()">Subscribe</button>`;
-    }
-
-    const downloadButton = req.session.userId 
-      ? `<a href="/download/${video._id}" class="btn btn-secondary"><i class="bi bi-download"></i> Download</a>` 
-      : `<button class="btn btn-secondary" onclick="showLoginPrompt()"><i class="bi bi-download"></i> Download</button>`;
-
-    const likeBtn = req.session.userId 
+    // Action buttons based on user session
+    const subscribeButton = req.session.userId && (req.session.userId !== video.owner._id.toString())
+      ? `<form method="POST" action="/subscribe/${video.owner._id}" style="display:inline;">
+           <button class="btn btn-outline-info">Subscribe</button>
+         </form>`
+      : '';
+    const likeButton = req.session.userId
       ? `<form method="POST" action="/like/${video._id}" style="display:inline;">
-           <button class="btn btn-success" type="submit"><i class="bi bi-hand-thumbs-up"></i> Like (${video.likes.length})</button>
+           <button class="btn btn-success">Like (${video.likes.length})</button>
          </form>`
-      : `<button class="btn btn-success" onclick="showLoginPrompt()"><i class="bi bi-hand-thumbs-up"></i> Like (${video.likes.length})</button>`;
-
-    const dislikeBtn = req.session.userId 
+      : `<button class="btn btn-success" onclick="alert('Login to like')">Like (${video.likes.length})</button>`;
+    const dislikeButton = req.session.userId
       ? `<form method="POST" action="/dislike/${video._id}" style="display:inline;">
-           <button class="btn btn-warning" type="submit"><i class="bi bi-hand-thumbs-down"></i> Dislike (${video.dislikes.length})</button>
+           <button class="btn btn-warning">Dislike (${video.dislikes.length})</button>
          </form>`
-      : `<button class="btn btn-warning" onclick="showLoginPrompt()"><i class="bi bi-hand-thumbs-down"></i> Dislike (${video.dislikes.length})</button>`;
+      : `<button class="btn btn-warning" onclick="alert('Login to dislike')">Dislike (${video.dislikes.length})</button>`;
 
-    let editDelete = '';
-    if (req.session.userId && video.owner._id.toString() === req.session.userId) {
-      editDelete = `
-        <a href="/edit/${video._id}" class="btn btn-secondary"><i class="bi bi-pencil"></i> Edit</a>
-        <form method="POST" action="/delete/${video._id}" style="display:inline;">
-          <button type="submit" class="btn btn-danger"><i class="bi bi-trash"></i> Delete</button>
-        </form>
-      `;
-    }
-
-    const shareButton = req.session.userId 
-      ? `<button class="btn btn-outline-primary" onclick="shareVideo('${video.title}')"><i class="bi bi-share"></i> Share</button>`
-      : `<button class="btn btn-outline-primary" onclick="showLoginPrompt()"><i class="bi bi-share"></i> Share</button>`;
-
-    let commentForm = req.session.userId 
+    let commentForm = req.session.userId
       ? `<form method="POST" action="/comment/${video._id}">
            <div class="mb-3">
              <textarea name="comment" class="form-control" placeholder="Add a comment..." required></textarea>
            </div>
-           <button type="submit" class="btn btn-primary mt-3">Comment</button>
+           <button type="submit" class="btn btn-primary">Comment</button>
          </form>`
-      : `<button class="btn btn-primary" onclick="showLoginPrompt()">Log in to comment</button>`;
+      : `<p><em>Login to comment.</em></p>`;
 
-    let commentsHtml = '';
+    let commentsHtml = `<h5>Comments</h5>`;
     video.comments.forEach(c => {
       commentsHtml += `<p><strong>${c.user.username}:</strong> ${c.comment}</p>`;
     });
 
-    const reportForm = req.session.userId 
-      ? `<form method="POST" action="/report/${video._id}" class="mt-4">
-           <div class="mb-2">
-             <input type="text" name="reason" class="form-control" placeholder="Reason for report" required />
-           </div>
-           <button type="submit" class="btn btn-danger"><i class="bi bi-flag"></i> Report</button>
-         </form>`
-      : `<button class="btn btn-danger mt-4" onclick="showLoginPrompt()"><i class="bi bi-flag"></i> Report</button>`;
-
-    const videoPage = `
+    const pageHtml = `
       <div class="row">
         <div class="col-md-8">
           <h2>${video.title}</h2>
-          <div class="mb-2">
-            <label for="videoQuality" class="form-label">Video Quality:</label>
-            <select id="videoQuality" class="form-select" style="max-width: 150px;">
-              <option value="360">360p</option>
-              <option value="480">480p</option>
-              <option value="720" selected>720p</option>
-              <option value="1080">1080p</option>
-            </select>
-          </div>
-          <video id="videoPlayer" width="100%" controls data-original-src="${video.filePath}">
+          <video width="100%" controls>
             <source src="${video.filePath}" type="video/mp4">
-            Your browser does not support the video tag.
+            Your browser does not support HTML5 video.
           </video>
+          <p>${autoLink(video.description)}</p>
           <p>Category: ${video.category}</p>
-          <p style="white-space: pre-wrap;">${autoLink(video.description)}</p>
-          <p>Uploaded by: <a href="/profile/${video.owner._id}">${video.owner.username}</a></p>
-          ${subscribeButton}
-          ${likeBtn} 
-          ${dislikeBtn} 
-          ${editDelete} 
-          ${downloadButton} 
-          ${shareButton}
+          <p>Views: ${video.viewCount}</p>
+          ${subscribeButton} ${likeButton} ${dislikeButton}
           <hr>
-          <h4>Comments</h4>
-          ${commentsHtml}
           ${commentForm}
-          <hr>
-          <h4>Report this Video</h4>
-          ${reportForm}
+          ${commentsHtml}
         </div>
         <div class="col-md-4">
-          <h4>Suggested Videos</h4>
           ${suggestedHtml}
         </div>
       </div>
     `;
-    res.send(renderPage(videoPage, req));
+    res.send(renderPage(pageHtml, req));
   } catch (err) {
-    console.error('View video error:', err);
-    res.send('Error retrieving video.');
+    console.error('Video display error:', err);
+    res.send('Error displaying video.');
   }
 });
+
+// Like video
 app.post('/like/:id', isAuthenticated, async (req, res) => {
   try {
-    let video = await Video.findById(req.params.id).populate('owner');
+    let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    let user = await User.findById(req.session.userId);
+    // Remove dislike if exists
     video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     if (video.likes.includes(req.session.userId)) {
       video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     } else {
       video.likes.push(req.session.userId);
-      io.emit('notification', `${user.username} liked "${video.title}" by ${video.owner ? video.owner.username : 'Unknown'}`);
+      io.emit('notification', `${req.session.username} liked "${video.title}"`);
     }
     await video.save();
     res.redirect('/video/' + req.params.id);
   } catch (err) {
     console.error('Like error:', err);
-    res.send('Error liking video.');
+    res.send('Error processing like.');
   }
 });
+
+// Dislike video
 app.post('/dislike/:id', isAuthenticated, async (req, res) => {
   try {
-    let video = await Video.findById(req.params.id).populate('owner');
+    let video = await Video.findById(req.params.id);
     if (!video) return res.send('Video not found.');
-    let user = await User.findById(req.session.userId);
     video.likes = video.likes.filter(uid => uid.toString() !== req.session.userId);
     if (video.dislikes.includes(req.session.userId)) {
       video.dislikes = video.dislikes.filter(uid => uid.toString() !== req.session.userId);
     } else {
       video.dislikes.push(req.session.userId);
-      io.emit('notification', `${user.username} disliked "${video.title}" by ${video.owner ? video.owner.username : 'Unknown'}`);
+      io.emit('notification', `${req.session.username} disliked "${video.title}"`);
     }
     await video.save();
     res.redirect('/video/' + req.params.id);
   } catch (err) {
     console.error('Dislike error:', err);
-    res.send('Error disliking video.');
+    res.send('Error processing dislike.');
   }
 });
+
+// Add comment
 app.post('/comment/:id', isAuthenticated, async (req, res) => {
   try {
     let video = await Video.findById(req.params.id);
@@ -828,271 +673,80 @@ app.post('/comment/:id', isAuthenticated, async (req, res) => {
     res.redirect('/video/' + req.params.id);
   } catch (err) {
     console.error('Comment error:', err);
-    res.send('Error commenting on video.');
+    res.send('Error adding comment.');
   }
 });
-app.post('/report/:id', isAuthenticated, async (req, res) => {
-  try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
-    video.reports.push({ user: req.session.userId, reason: req.body.reason });
-    await video.save();
-    io.emit('notification', 'A video has been reported!');
-    res.redirect('/video/' + req.params.id);
-  } catch (err) {
-    console.error('Report error:', err);
-    res.send('Error reporting video.');
-  }
-});
-app.get('/edit/:id', isAuthenticated, async (req, res) => {
-  try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
-    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
-    const form = `
-      <h2>Edit Video</h2>
-      <form method="POST" action="/edit/${video._id}" enctype="multipart/form-data">
-        <div class="mb-3">
-          <label>Title:</label>
-          <input type="text" name="title" class="form-control" value="${video.title}" required />
-        </div>
-        <div class="mb-3">
-          <label>Description:</label>
-          <textarea name="description" class="form-control" required>${video.description}</textarea>
-        </div>
-        <div class="mb-3">
-          <label>Category:</label>
-          <select name="category" class="form-select">
-            <option value="Music" ${video.category === 'Music' ? 'selected' : ''}>Music</option>
-            <option value="Gaming" ${video.category === 'Gaming' ? 'selected' : ''}>Gaming</option>
-            <option value="News" ${video.category === 'News' ? 'selected' : ''}>News</option>
-            <option value="General" ${video.category === 'General' ? 'selected' : ''}>General</option>
-          </select>
-        </div>
-        <div class="mb-3">
-          <label>Change Thumbnail (optional):</label>
-          <input type="file" name="thumbnailFile" class="form-control" accept="image/*" id="thumbnailFileInput" />
-          <img id="thumbnailFilePreview" class="preview-img" alt="Thumbnail Preview" />
-        </div>
-        <button type="submit" class="btn btn-primary">Update</button>
-      </form>
-    `;
-    res.send(renderPage(form, req));
-  } catch (err) {
-    console.error('Edit video error:', err);
-    res.send('Error editing video.');
-  }
-});
-app.post('/edit/:id', isAuthenticated, async (req, res) => {
-  try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
-    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
-    video.title = req.body.title;
-    video.description = req.body.description;
-    video.category = req.body.category || 'General';
-    if (req.files && req.files.thumbnailFile) {
-      const thumbResult = await cloudinary.uploader.upload(req.files.thumbnailFile.tempFilePath, {
-        resource_type: 'image',
-        folder: 'thumbnails'
-      });
-      video.thumbnail = thumbResult.secure_url;
-    }
-    await video.save();
-    res.redirect('/video/' + req.params.id);
-  } catch (err) {
-    console.error('Update video error:', err);
-    res.send('Error updating video.');
-  }
-});
-app.post('/delete/:id', isAuthenticated, async (req, res) => {
-  try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
-    if (video.owner.toString() !== req.session.userId) return res.send('Unauthorized.');
-    await Video.deleteOne({ _id: req.params.id });
-    res.redirect('/');
-  } catch (err) {
-    console.error('Delete video error:', err);
-    res.send('Error deleting video.');
-  }
-});
-app.get('/download/:id', async (req, res) => {
-  try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
-    res.redirect(video.filePath);
-  } catch (err) {
-    console.error('Download error:', err);
-    res.send('Error downloading file.');
-  }
-});
+
+// Subscribe/Unsubscribe
 app.post('/subscribe/:ownerId', isAuthenticated, async (req, res) => {
   try {
     let owner = await User.findById(req.params.ownerId);
-    let user  = await User.findById(req.session.userId);
+    let user = await User.findById(req.session.userId);
     if (!owner || !user) return res.send('User not found.');
-    if (owner._id.toString() === user._id.toString()) return res.send('You cannot subscribe to yourself.');
-    const alreadySubscribed = owner.subscribers.includes(user._id);
-    if (alreadySubscribed) {
+    if (owner._id.toString() === user._id.toString())
+      return res.send('Cannot subscribe to yourself.');
+    if (owner.subscribers.includes(user._id)) {
       owner.subscribers = owner.subscribers.filter(sid => sid.toString() !== user._id.toString());
     } else {
       owner.subscribers.push(user._id);
     }
     await owner.save();
-    io.emit('notification', user.username + (alreadySubscribed ? ' unsubscribed from ' : ' subscribed to ') + owner.username);
+    io.emit('notification', `${user.username} updated subscription for ${owner.username}`);
     res.redirect('back');
   } catch (err) {
     console.error('Subscribe error:', err);
-    res.send('Error subscribing/unsubscribing.');
-  }
-});
-app.get('/subscriptions', isAuthenticated, async (req, res) => {
-  try {
-    let subscriptions = await User.find({ subscribers: req.session.userId });
-    let subsHtml = `<h2>Your Subscriptions</h2><div class="row">`;
-    subscriptions.forEach(sub => {
-      subsHtml += `
-        <div class="col-md-3">
-          <div class="card mb-2">
-            <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">
-            <div class="card-body">
-              <h6 class="card-title">${sub.username}</h6>
-              <a href="/profile/${sub._id}" class="btn btn-primary btn-sm">View Profile</a>
-            </div>
-          </div>
-        </div>
-      `;
-    });
-    subsHtml += `</div>`;
-    res.send(renderPage(subsHtml, req));
-  } catch (err) {
-    console.error('Subscriptions error:', err);
-    res.send('Error loading subscriptions.');
+    res.send('Error updating subscription.');
   }
 });
 
-// ================== PROFILE ROUTES ==================
+// Profile routes
 app.get('/profile/:id', async (req, res) => {
   try {
     let userProfile = await User.findById(req.params.id);
     if (!userProfile) return res.send('User not found.');
-    let videos = await Video.find({ owner: req.params.id });
+    let vids = await Video.find({ owner: req.params.id });
     let videosHtml = '<div class="row">';
-    videos.forEach(video => {
+    vids.forEach(v => {
       videosHtml += `
         <div class="col-md-4">
-          <div class="card video-card">
-            <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" data-video="${video.filePath}">
+          <div class="card">
+            <img src="${v.thumbnail}" class="card-img-top" alt="Thumbnail">
             <div class="card-body">
-              <h5 class="card-title">${video.title}</h5>
-              <p class="card-text">${video.description.substring(0, 60)}...</p>
-              <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch Video</a>
+              <h5 class="card-title">${v.title}</h5>
+              <a href="/video/${v._id}" class="btn btn-primary">Watch</a>
             </div>
           </div>
-        </div>
-      `;
+        </div>`;
     });
     videosHtml += '</div>';
+
     let profileHtml = `
-      <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
-      <img src="${userProfile.profilePic}" alt="Profile Picture" style="width:150px;height:150px; object-fit:cover; border-radius:50%;">
-      <p>${userProfile.about}</p>
-      <p>Subscribers: ${userProfile.subscribers.length}</p>
+      <div class="text-center">
+        <img src="${userProfile.profilePic}" alt="Profile Pic" style="width:150px;height:150px;object-fit:cover;border-radius:50%;">
+        <h2>${userProfile.username} ${userProfile.verified ? '<span class="badge bg-success">Verified</span>' : ''}</h2>
+        <p>${userProfile.about}</p>
+        <p>Subscribers: ${userProfile.subscribers.length}</p>
+      </div>
+      ${videosHtml}
     `;
-    if(req.session.userId) {
-      if(req.session.userId !== req.params.id) {
-        const isSubscribed = userProfile.subscribers.includes(req.session.userId);
-        profileHtml += `
-          <form method="POST" action="/subscribe/${userProfile._id}" style="display:inline;">
-            <button class="btn btn-info" type="submit">
-              ${isSubscribed ? 'Unsubscribe' : 'Subscribe'}
-            </button>
-          </form>
-        `;
-      } else {
-        let subscriptionsList = await User.find({ subscribers: req.session.userId });
-        if(subscriptionsList.length > 0) {
-          profileHtml += `<h4>Your Subscriptions:</h4><div class="row">`;
-          subscriptionsList.forEach(sub => {
-            profileHtml += `
-              <div class="col-md-3">
-                <div class="card mb-2">
-                  <img src="${sub.profilePic}" alt="Profile Pic" class="card-img-top" style="height:100px; object-fit:cover;">
-                  <div class="card-body">
-                    <h6 class="card-title">${sub.username}</h6>
-                    <a href="/profile/${sub._id}" class="btn btn-sm btn-primary">View</a>
-                  </div>
-                </div>
-              </div>
-            `;
-          });
-          profileHtml += `</div>`;
-        }
-      }
-    } else {
-      profileHtml += `<button class="btn btn-info" onclick="showLoginPrompt()">Subscribe</button>`;
-    }
-    const popularVideos = [...videos].sort((a, b) => b.viewCount - a.viewCount).slice(0, 3);
-    if(popularVideos.length > 0) {
-      profileHtml += `<h4>Popular Videos by ${userProfile.username}:</h4><div class="row">`;
-      popularVideos.forEach(video => {
-        profileHtml += `
-          <div class="col-md-4">
-            <div class="card video-card">
-              <img src="${video.thumbnail}" alt="Thumbnail" class="card-img-top video-thumbnail" style="max-height:200px; object-fit:cover;">
-              <div class="card-body">
-                <h5 class="card-title">${video.title}</h5>
-                <a href="/video/${video._id}" class="btn btn-primary"><i class="bi bi-play-circle"></i> Watch</a>
-              </div>
-            </div>
-          </div>
-        `;
-      });
-      profileHtml += `</div>`;
-    }
-    profileHtml += `<h4 class="mt-4">All Videos by ${userProfile.username}:</h4>${videosHtml}`;
-    if(req.session.userId && req.session.userId === req.params.id) {
-      profileHtml += `
-        <hr>
-        <h3>Update Profile</h3>
-        <form method="POST" action="/updateProfile" enctype="multipart/form-data">
-          <div class="mb-3">
-            <label>Profile Picture:</label>
-            <input type="file" name="profilePic" accept="image/*" class="form-control" id="profilePicInput" />
-            <img id="profilePicPreview" class="preview-img" alt="Profile Pic Preview" />
-          </div>
-          <div class="mb-3">
-            <label>About Me:</label>
-            <textarea name="about" class="form-control">${userProfile.about}</textarea>
-          </div>
-          <button type="submit" class="btn btn-primary">Update Profile</button>
-        </form>
-      `;
-      if (userProfile.warnings && userProfile.warnings.length > 0) {
-        profileHtml += `<hr><h4>Your Warnings from Admin:</h4>`;
-        userProfile.warnings.forEach(w => {
-          profileHtml += `<p>- ${w.message} (on ${w.date.toLocaleString()})</p>`;
-        });
-      }
-    }
     res.send(renderPage(profileHtml, req));
   } catch (err) {
     console.error('Profile error:', err);
     res.send('Error loading profile.');
   }
 });
+
+// Update profile (only basic info)
 app.post('/updateProfile', isAuthenticated, async (req, res) => {
   try {
     let user = await User.findById(req.session.userId);
     if (!user) return res.send('User not found.');
     if (req.files && req.files.profilePic) {
-      const picResult = await cloudinary.uploader.upload(req.files.profilePic.tempFilePath, {
+      const picUpload = await cloudinary.uploader.upload(req.files.profilePic.tempFilePath, {
         resource_type: 'image',
         folder: 'profiles'
       });
-      user.profilePic = picResult.secure_url;
-      req.session.profilePic = picResult.secure_url;
+      user.profilePic = picUpload.secure_url;
     }
     user.about = req.body.about;
     await user.save();
@@ -1103,128 +757,115 @@ app.post('/updateProfile', isAuthenticated, async (req, res) => {
   }
 });
 
-// ================== ADMIN PANEL ==================
+// Admin Panel Routes
 app.get('/admin', isAdmin, async (req, res) => {
   try {
     const users = await User.find({});
-    let userHtml = '<h2>Admin Panel - Manage Users</h2>';
-    users.forEach(user => {
-      userHtml += `
+    let usersHtml = `<h2>Admin Panel - Users</h2>`;
+    users.forEach(u => {
+      usersHtml += `
         <div class="card mb-2">
           <div class="card-body">
-            <p>
-              ${user.username} - ${user.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
-              ${
-                user._id.toString() !== req.session.userId
-                ? `
-                  <form style="display:inline;" method="POST" action="/ban/${user._id}">
-                    <button class="btn btn-danger btn-sm">Ban/Unban</button>
-                  </form>
-                  <form style="display:inline;" method="POST" action="/admin/delete/user/${user._id}">
-                    <button class="btn btn-danger btn-sm">Delete Account</button>
-                  </form>
-                  <form style="display:inline;" method="POST" action="/admin/warn/${user._id}">
-                    <input type="text" name="message" placeholder="Warning reason" required />
-                    <button class="btn btn-warning btn-sm">Warn</button>
-                  </form>
-                ` : ''
-              }
-              ${
-                !user.verified
-                ? `<form style="display:inline;" method="POST" action="/verify/${user._id}">
-                    <button class="btn btn-info btn-sm">Verify</button>
-                  </form>`
-                : ''
-              }
-            </p>
+            <strong>${u.username}</strong> - ${u.banned ? '<span class="text-danger">Banned</span>' : 'Active'}
+            ${u._id.toString() !== req.session.userId ? `
+              <form method="POST" action="/ban/${u._id}" style="display:inline;">
+                <button class="btn btn-danger btn-sm">Ban/Unban</button>
+              </form>
+              <form method="POST" action="/admin/delete/user/${u._id}" style="display:inline;">
+                <button class="btn btn-danger btn-sm">Delete</button>
+              </form>
+              <form method="POST" action="/admin/warn/${u._id}" style="display:inline;">
+                <input type="text" name="message" placeholder="Warn message" required>
+                <button class="btn btn-warning btn-sm">Warn</button>
+              </form>
+            ` : '' }
+            ${!u.verified ? `<form method="POST" action="/verify/${u._id}" style="display:inline;">
+              <button class="btn btn-info btn-sm">Verify</button>
+            </form>` : ''}
           </div>
-        </div>
-      `;
+        </div>`;
     });
     const videos = await Video.find({}).populate('owner');
-    let videoHtml = '<h2 class="mt-4">Admin Panel - Manage Videos</h2>';
-    videos.forEach(video => {
-      videoHtml += `
+    let videosHtml = `<h2 class="mt-4">Admin Panel - Videos</h2>`;
+    videos.forEach(v => {
+      videosHtml += `
         <div class="card mb-2">
           <div class="card-body">
-            <p>
-              ${video.title} by ${video.owner ? video.owner.username : 'Unknown'}
-              <form style="display:inline;" method="POST" action="/admin/delete/video/${video._id}">
-                <button class="btn btn-danger btn-sm">Delete Video</button>
-              </form>
-            </p>
+            <strong>${v.title}</strong> by ${v.owner ? v.owner.username : 'Unknown'}
+            <form method="POST" action="/admin/delete/video/${v._id}" style="display:inline;">
+              <button class="btn btn-danger btn-sm">Delete</button>
+            </form>
           </div>
-        </div>
-      `;
+        </div>`;
     });
-    res.send(renderPage(userHtml + videoHtml, req));
+    res.send(renderPage(usersHtml + videosHtml, req));
   } catch (err) {
     console.error('Admin panel error:', err);
-    res.send('Internal server error in admin panel.');
+    res.send('Error loading admin panel.');
   }
 });
+
 app.post('/ban/:id', isAdmin, async (req, res) => {
   try {
-    let user = await User.findById(req.params.id);
-    if (!user) return res.send('User not found.');
-    user.banned = !user.banned;
-    await user.save();
+    let u = await User.findById(req.params.id);
+    if (!u) return res.send('User not found.');
+    u.banned = !u.banned;
+    await u.save();
     res.redirect('/admin');
   } catch (err) {
     console.error('Ban error:', err);
     res.send('Error updating ban status.');
   }
 });
+
 app.post('/verify/:id', isAdmin, async (req, res) => {
   try {
-    let user = await User.findById(req.params.id);
-    if (!user) return res.send('User not found.');
-    user.verified = true;
-    await user.save();
+    let u = await User.findById(req.params.id);
+    if (!u) return res.send('User not found.');
+    u.verified = true;
+    await u.save();
     res.redirect('/admin');
   } catch (err) {
     console.error('Verify error:', err);
     res.send('Error verifying user.');
   }
 });
+
 app.post('/admin/warn/:id', isAdmin, async (req, res) => {
   try {
-    let user = await User.findById(req.params.id);
-    if (!user) return res.send('User not found.');
-    user.warnings.push({ message: req.body.message });
-    await user.save();
-    io.emit('notification', 'Admin warned ' + user.username + ' for: ' + req.body.message);
+    let u = await User.findById(req.params.id);
+    if (!u) return res.send('User not found.');
+    u.warnings.push({ message: req.body.message });
+    await u.save();
+    io.emit('notification', `Admin warned ${u.username}: ${req.body.message}`);
     res.redirect('/admin');
   } catch (err) {
-    console.error('Warn user error:', err);
+    console.error('Warn error:', err);
     res.send('Error warning user.');
   }
 });
+
 app.post('/admin/delete/video/:id', isAdmin, async (req, res) => {
   try {
-    let video = await Video.findById(req.params.id);
-    if (!video) return res.send('Video not found.');
     await Video.deleteOne({ _id: req.params.id });
     res.redirect('/admin');
   } catch (err) {
-    console.error('Admin delete video error:', err);
+    console.error('Delete video error:', err);
     res.send('Error deleting video.');
   }
 });
+
 app.post('/admin/delete/user/:id', isAdmin, async (req, res) => {
   try {
-    let user = await User.findById(req.params.id);
-    if (!user) return res.send('User not found.');
     await User.deleteOne({ _id: req.params.id });
     res.redirect('/admin');
   } catch (err) {
-    console.error('Admin delete user error:', err);
+    console.error('Delete user error:', err);
     res.send('Error deleting user.');
   }
 });
 
-// ================== API ENDPOINT ==================
-// Returns JSON list of videos for external API consumers
+// ========== API Endpoint ==========
 app.get('/api/videos', async (req, res) => {
   try {
     const videos = await Video.find({}).populate('owner', 'username profilePic');
@@ -1235,12 +876,12 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// ================== CATCH-ALL ERROR HANDLER ==================
+// ========== CATCH-ALL ==========
 app.use((req, res) => {
   res.status(404).send(renderPage('<h2>404 - Page Not Found</h2>', req));
 });
 
-// ================== START SERVER ==================
+// ========== START SERVER ==========
 server.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
 });
